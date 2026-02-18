@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Rename-Item \"C:\\\\Users\\\\s3711\\\\Desktop\\\\IndSurp Warehousing\\\\green_border.html\" \"warehouse.html\")",
+      "Bash(findstr:*)"
+    ]
+  }
+}
