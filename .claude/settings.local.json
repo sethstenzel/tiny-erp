@@ -6,7 +6,8 @@
       "Bash(powershell -Command:*)",
       "Bash(uv add:*)",
       "Bash(uv run python:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(sqlite3:*)"
     ]
   }
 }

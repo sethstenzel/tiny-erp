@@ -40,6 +40,11 @@
       </div>
     </div>
     <div class="brand-name">IndSurp</div>
+    <div class="user-info">
+      <span class="user-role-badge" :class="userData.role">{{ userData.role }}</span>
+      <span class="user-name">{{ userData.username }}</span>
+      <button class="btn-logout" @click="logout">Sign Out</button>
+    </div>
   </header>
 
   <!-- ── Main content ── -->
@@ -49,16 +54,16 @@
       <div class="tab-bar">
         <div v-for="(wh, idx) in tabs" :key="wh.id"
              class="tab" :class="{ active: idx === activeTabIdx }"
-             @click="switchTab(idx)" @dblclick.stop="startRenameTab(idx, $event)">
+             @click="switchTab(idx)" @dblclick.stop="isAdmin && startRenameTab(idx, $event)">
           <span v-if="renamingTabIdx !== idx">{{ wh.name }}</span>
           <input v-else type="text" class="tab-name-input" :value="wh.name"
                  @blur="commitRenameTab(idx, $event)"
                  @keydown.enter.prevent="$event.target.blur()"
                  @keydown.escape="cancelRenameTab(idx)"
                  ref="tabNameInput">
-          <button v-if="tabs.length > 1" class="tab-close" @click.stop="removeTab(idx)">&#x2715;</button>
+          <button v-if="isAdmin && tabs.length > 1" class="tab-close" @click.stop="removeTab(idx)">&#x2715;</button>
         </div>
-        <button class="btn-add-tab" title="Add new warehouse" @click="addTab">+</button>
+        <button v-if="isAdmin" class="btn-add-tab" title="Add new warehouse" @click="addTab">+</button>
       </div>
 
       <!-- Viewport -->
@@ -69,6 +74,7 @@
               <div ref="drawPreview" class="draw-preview-el"></div>
             </div>
             <div v-for="edge in ['nw','n','ne','e','se','s','sw','w']" :key="edge"
+                 v-show="isAdmin"
                  :class="`rh rh-${edge}`" :data-edge="edge"
                  @mousedown.stop.prevent="startWarehouseResize(edge, $event)">
             </div>
@@ -84,14 +90,14 @@
       {{ menuCollapsed ? '&#x2039;' : '&#x203A;' }}
     </button>
     <h3>Warehouse Tools</h3>
-    <button class="btn-add-isle" :class="{ active: addIsleActive }" @click="activateDrawMode">Add Isle</button>
-    <button class="btn-add-zone" :class="{ active: addZoneActive }" @click="activateZoneMode">Add Zone</button>
-    <button class="btn-edit-warehouse" :class="{ active: editActive }" @click="activateEditMode">Edit Warehouse</button>
-    <button class="btn-delete-entity" v-show="showDelEntBtn" @click="deleteSelectedEntity">&#x1F5D1; Delete Selected</button>
+    <button v-if="isAdmin" class="btn-add-isle" :class="{ active: addIsleActive }" @click="activateDrawMode">Add Isle</button>
+    <button v-if="isAdmin" class="btn-add-zone" :class="{ active: addZoneActive }" @click="activateZoneMode">Add Zone</button>
+    <button v-if="isAdmin" class="btn-edit-warehouse" :class="{ active: editActive }" @click="activateEditMode">Edit Warehouse</button>
+    <button class="btn-delete-entity" v-show="isAdmin && showDelEntBtn" @click="deleteSelectedEntity">&#x1F5D1; Delete Selected</button>
     <hr style="border:none;border-top:1px solid #334155;margin:4px 0;">
-    <button class="btn-add-bg" @click="triggerBgImport">Add Background</button>
-    <button class="btn-clear-bg" v-show="hasBg" @click="clearBackground">Clear Background</button>
-    <input type="file" ref="bgFileInput" accept="image/png,image/jpeg" style="display:none" @change="handleBgFile">
+    <button v-if="isAdmin" class="btn-add-bg" @click="triggerBgImport">Add Background</button>
+    <button v-if="isAdmin" class="btn-clear-bg" v-show="hasBg" @click="clearBackground">Clear Background</button>
+    <input v-if="isAdmin" type="file" ref="bgFileInput" accept="image/png,image/jpeg" style="display:none" @change="handleBgFile">
     <div class="status-msg">{{ statusText }}</div>
     <div class="isle-count">{{ isleCountText }}</div>
     <div style="display:flex;gap:5px;margin-top:2px;">
@@ -249,7 +255,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" @click="backToSubsectionSelect">← Back</button>
-        <button class="btn-confirm" @click="openAddShelf">+ Add Shelf</button>
+        <button v-if="isAdmin" class="btn-confirm" @click="openAddShelf">+ Add Shelf</button>
       </div>
     </div>
   </div>
@@ -285,7 +291,7 @@
         <button class="action-btn rem" @click="openRemoveItems">
           <span class="action-icon">－</span>Remove Item
         </button>
-        <button class="action-btn del" @click="deleteShelf">
+        <button v-if="isAdmin" class="action-btn del" @click="deleteShelf">
           <span class="action-icon">🗑</span>Delete Shelf
         </button>
       </div>

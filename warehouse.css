@@ -31,6 +31,31 @@
       background-clip: text; white-space: nowrap; flex-shrink: 0;
     }
 
+    /* ── User info (inside header) ── */
+    .user-info {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0; white-space: nowrap;
+    }
+    .user-name {
+      font-size: 13px; font-weight: 500; color: #94a3b8;
+    }
+    .user-role-badge {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+      padding: 3px 8px; border-radius: 99px;
+    }
+    .user-role-badge.admin {
+      background: #1e3a5f; color: #60a5fa; border: 1px solid #2563eb;
+    }
+    .user-role-badge.worker {
+      background: #1a2e1a; color: #86efac; border: 1px solid #16a34a;
+    }
+    .btn-logout {
+      padding: 5px 12px; background: transparent; color: #64748b;
+      border: 1px solid #334155; border-radius: 6px;
+      font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-logout:hover { color: #e2e8f0; border-color: #64748b; }
+
     /* ── Search bar (inside header) ── */
     .search-bar { flex: 1; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; min-width: 0; }
     .search-input-wrap { display: flex; gap: 8px; flex: 1; min-width: 0; }

@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Cookie, Depends, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import sqlite3
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -10,8 +11,11 @@ DB_PATH = "warehouse.sqlite"
 
 app = FastAPI(title="IndSurp Warehouse API")
 
+# In-memory session store: token -> {username, role}
+sessions: dict[str, dict] = {}
 
-# ── Database ────────────────────────────────────────────────────────────────
+
+# ── Database ─────────────────────────────────────────────────────────────────
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -48,7 +52,22 @@ def init_db():
             zone_id            INTEGER,
             zone_label         TEXT DEFAULT ''
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL,
+            role     TEXT NOT NULL DEFAULT 'worker'
+        );
     """)
+    conn.execute(
+        "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
+        ("admin", "admin", "admin"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
+        ("worker", "worker", "worker"),
+    )
     conn.commit()
     conn.close()
 
@@ -56,11 +75,30 @@ def init_db():
 init_db()
 
 
+# ── Auth helpers ─────────────────────────────────────────────────────────────
+
+def get_current_user(session_id: Optional[str] = Cookie(None)):
+    if not session_id or session_id not in sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return sessions[session_id]
+
+
+def require_admin(user: dict = Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 # ── Static file serving ──────────────────────────────────────────────────────
 
 @app.get("/")
 async def serve_app():
     return FileResponse("warehouse.html")
+
+
+@app.get("/login")
+async def serve_login():
+    return FileResponse("login.html")
 
 
 @app.get("/warehouse.css")
@@ -73,10 +111,46 @@ async def serve_js():
     return FileResponse("warehouse.js")
 
 
+# ── Auth API ─────────────────────────────────────────────────────────────────
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/login")
+def login(body: LoginBody, response: Response):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM users WHERE username = ? AND password = ?",
+        (body.username, body.password),
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = str(uuid.uuid4())
+    sessions[token] = {"username": row["username"], "role": row["role"]}
+    response.set_cookie(key="session_id", value=token, httponly=True, samesite="lax")
+    return {"username": row["username"], "role": row["role"]}
+
+
+@app.post("/api/logout")
+def logout(response: Response, session_id: Optional[str] = Cookie(None)):
+    if session_id and session_id in sessions:
+        del sessions[session_id]
+    response.delete_cookie("session_id")
+    return {"ok": True}
+
+
+@app.get("/api/me")
+def me(user: dict = Depends(get_current_user)):
+    return user
+
+
 # ── Layout API ───────────────────────────────────────────────────────────────
 
 @app.get("/api/layout")
-def get_layout():
+def get_layout(user: dict = Depends(get_current_user)):
     conn = get_db()
     row = conn.execute("SELECT data FROM layout WHERE id = 1").fetchone()
     conn.close()
@@ -90,7 +164,7 @@ class LayoutBody(BaseModel):
 
 
 @app.put("/api/layout")
-def save_layout(body: LayoutBody):
+def save_layout(body: LayoutBody, user: dict = Depends(require_admin)):
     now = datetime.now(timezone.utc).isoformat()
     conn = get_db()
     conn.execute(
@@ -105,10 +179,10 @@ def save_layout(body: LayoutBody):
     return {"ok": True}
 
 
-# ── Items API ────────────────────────────────────────────────────────────────
+# ── Items API ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/items")
-def get_items(q: str = ""):
+def get_items(q: str = "", user: dict = Depends(get_current_user)):
     conn = get_db()
     if q:
         rows = conn.execute(
@@ -142,7 +216,7 @@ class ItemBody(BaseModel):
 
 
 @app.post("/api/items")
-def add_item(body: ItemBody):
+def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
     added_at = body.added_at or datetime.now(timezone.utc).isoformat()
     conn = get_db()
     cur = conn.execute(
@@ -172,7 +246,7 @@ def add_item(body: ItemBody):
 
 
 @app.delete("/api/items/{item_db_id}")
-def delete_item(item_db_id: int):
+def delete_item(item_db_id: int, user: dict = Depends(get_current_user)):
     conn = get_db()
     conn.execute("DELETE FROM items WHERE id = ?", (item_db_id,))
     conn.commit()

@@ -111,7 +111,17 @@ createApp({
       showDelEntBtn: false,
       hasBg:         false,
       menuCollapsed: false,
+
+      // Auth
+      userData: { username: '', role: '' },
     };
+  },
+
+  /* ══════════════════════════════════════════
+     COMPUTED
+  ══════════════════════════════════════════ */
+  computed: {
+    isAdmin() { return this.userData.role === 'admin'; },
   },
 
   /* ══════════════════════════════════════════
@@ -153,7 +163,8 @@ createApp({
   /* ══════════════════════════════════════════
      LIFECYCLE
   ══════════════════════════════════════════ */
-  mounted() {
+  async mounted() {
+    await this._checkAuth();
     this._initNonReactive();
     this._initDOMRefs();
     this._initEventListeners();
@@ -337,6 +348,23 @@ createApp({
       document.addEventListener('drop',     e => e.preventDefault());
     },
 
+    // ── Auth ─────────────────────────────────────────────────────────────────
+
+    async _checkAuth() {
+      try {
+        const resp = await fetch('/api/me');
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        this.userData = await resp.json();
+      } catch {
+        window.location.href = '/login';
+      }
+    },
+
+    async logout() {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/login';
+    },
+
     // ── DB / API ─────────────────────────────────────────────────────────────
 
     async _loadFromDB() {
@@ -345,6 +373,7 @@ createApp({
           fetch('/api/layout'),
           fetch('/api/items'),
         ]);
+        if (layoutResp.status === 401) { window.location.href = '/login'; return; }
         const layoutData = await layoutResp.json();
         const items      = await itemsResp.json();
 
@@ -372,8 +401,8 @@ createApp({
       // Render the warehouse square and set its inline dimensions before centering
       this._loadWarehouseDOM(this._warehouses[0]);
       this._syncTabs();
-      // Persist the initial warehouse so subsequent loads find it in the DB
-      this._saveLayout();
+      // Persist the initial warehouse so subsequent loads find it in the DB (admin only)
+      if (this.isAdmin) this._saveLayout();
       this.$nextTick(() => this._resetView());
     },
 
