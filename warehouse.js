@@ -247,7 +247,18 @@ createApp({
       this._azfi = null;  // active zone for items
       this._selIsle   = null;
       this._selZone   = null;
+      this._selIsles  = [];   // multi-selection arrays
+      this._selZones  = [];
       this._copiedIsle = null;
+
+      // Multi-drag
+      this._isDragMulti = false;
+      this._dragMultiSMX = 0; this._dragMultiSMY = 0;
+      this._multiDragStartPositions = [];
+
+      // Rubber-band selection
+      this._isRubberBand = false;
+      this._rbStartX = 0; this._rbStartY = 0;
       this._pendDelEnt = null;
 
       this._selItemIds     = new Set();
@@ -310,6 +321,17 @@ createApp({
             this._entResizeSX  = entity.position.x;    this._entResizeSY  = entity.position.y;
             this._entResizeSW  = entity.dimensions.width; this._entResizeSH = entity.dimensions.height;
           }
+          return;
+        }
+        // Edit mode: rubber-band selection on empty warehouse space
+        if (this._editMode && e.button === 0 && !e.target.closest('.isle') && !e.target.closest('.zone') && !handle) {
+          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) this._clearAllSelection();
+          this._isRubberBand = true;
+          const rp = this._relPos(e);
+          this._rbStartX = rp.x; this._rbStartY = rp.y;
+          Object.assign(this._prev.style, { left:`${rp.x}px`, top:`${rp.y}px`, width:'0', height:'0', display:'block' });
+          this._prev.classList.add('rubber-band');
+          e.preventDefault();
           return;
         }
         // Draw mode
@@ -662,33 +684,81 @@ createApp({
       if (this._editMode) { this._cancelEditMode(); return; }
       if (this._drawMode) this._cancelDrawMode();
       this._editMode = true; this.editActive = true;
-      this.statusText = 'Drag to move · Blue handles to resize · Click to select · Del to delete.';
+      this.statusText = 'Drag to move · Blue handles to resize · Click to select · Shift/Ctrl+click multi-select · Del to delete.';
       this._createAllHandles();
     },
     _cancelEditMode() {
       this._editMode = false; this.editActive = false;
       this._isEntResize = false; this._entResizeTarget = null;
       this._isleDragMoved = false;
-      this._selectIsle(null); this._selectZone(null);
+      this._isDragMulti = false; this._multiDragStartPositions = [];
+      this._isRubberBand = false;
+      this._clearAllSelection();
       this.showDelEntBtn = false;
       this.statusText = 'Click "Add Isle" then draw inside the warehouse.';
       this._removeAllHandles();
     },
 
     _selectIsle(isle) {
-      if (this._selIsle && this._selIsle.element) this._selIsle.element.classList.remove('isle-selected');
-      this._selIsle = isle;
-      if (isle && isle.element) isle.element.classList.add('isle-selected');
-      this._updateDelBtn();
+      this._clearAllSelection();
+      if (isle) this._addIsleToSelection(isle);
     },
     _selectZone(zone) {
-      if (this._selZone && this._selZone.element) this._selZone.element.classList.remove('zone-selected');
-      this._selZone = zone;
-      if (zone && zone.element) zone.element.classList.add('zone-selected');
+      this._clearAllSelection();
+      if (zone) this._addZoneToSelection(zone);
+    },
+    _clearAllSelection() {
+      this._selIsles.forEach(i => i.element?.classList.remove('isle-selected'));
+      this._selZones.forEach(z => z.element?.classList.remove('zone-selected'));
+      this._selIsles = []; this._selZones = [];
+      this._selIsle = null; this._selZone = null;
       this._updateDelBtn();
     },
+    _addIsleToSelection(isle) {
+      if (!isle || this._selIsles.includes(isle)) return;
+      this._selIsles.push(isle);
+      isle.element?.classList.add('isle-selected');
+      this._selIsle = isle;
+      this._updateDelBtn();
+    },
+    _addZoneToSelection(zone) {
+      if (!zone || this._selZones.includes(zone)) return;
+      this._selZones.push(zone);
+      zone.element?.classList.add('zone-selected');
+      this._selZone = zone;
+      this._updateDelBtn();
+    },
+    _toggleSelectIsle(isle) {
+      const idx = this._selIsles.indexOf(isle);
+      if (idx !== -1) {
+        this._selIsles.splice(idx, 1);
+        isle.element?.classList.remove('isle-selected');
+        this._selIsle = this._selIsles[this._selIsles.length - 1] || null;
+      } else {
+        this._selIsles.push(isle);
+        isle.element?.classList.add('isle-selected');
+        this._selIsle = isle;
+      }
+      this._updateDelBtn();
+    },
+    _toggleSelectZone(zone) {
+      const idx = this._selZones.indexOf(zone);
+      if (idx !== -1) {
+        this._selZones.splice(idx, 1);
+        zone.element?.classList.remove('zone-selected');
+        this._selZone = this._selZones[this._selZones.length - 1] || null;
+      } else {
+        this._selZones.push(zone);
+        zone.element?.classList.add('zone-selected');
+        this._selZone = zone;
+      }
+      this._updateDelBtn();
+    },
+    _rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    },
     _updateDelBtn() {
-      this.showDelEntBtn = this._editMode && !!(this._selIsle || this._selZone);
+      this.showDelEntBtn = this._editMode && !!(this._selIsles.length || this._selZones.length);
     },
 
     // ── Draw mode ────────────────────────────────────────────────────────────
@@ -766,6 +836,21 @@ createApp({
         this._rotEntity.element.style.transform = `rotate(${nr}deg)`;
         this._updateHandles(this._rotEntity, this._rotEntityType);
       }
+      if (this._isDragMulti) {
+        const dx = (e.clientX - this._dragMultiSMX) / this._currentZoom;
+        const dy = (e.clientY - this._dragMultiSMY) / this._currentZoom;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._isleDragMoved = true, this._zoneDragMoved = true;
+        for (const { entity, type, sx, sy } of this._multiDragStartPositions) {
+          let nx = sx + dx, ny = sy + dy;
+          if (type === 'isle') {
+            nx = this._clamp(nx, 0, this._wh.clientWidth  - entity.dimensions.width);
+            ny = this._clamp(ny, 0, this._wh.clientHeight - entity.dimensions.height);
+          }
+          entity.position.x = nx; entity.position.y = ny;
+          entity.element.style.left = nx + 'px'; entity.element.style.top = ny + 'px';
+          if (this._editMode) this._updateHandles(entity, type);
+        }
+      }
       if (this._isDragIsle && this._dragIsle) {
         const dx = (e.clientX - this._isleSMX) / this._currentZoom;
         const dy = (e.clientY - this._isleSMY) / this._currentZoom;
@@ -786,6 +871,14 @@ createApp({
         this._dragZone.element.style.left = sn.x + 'px'; this._dragZone.element.style.top = sn.y + 'px';
         if (this._editMode) this._updateHandles(this._dragZone, 'zone');
       }
+      if (this._isRubberBand) {
+        const raw = this._relPos(e);
+        const x = Math.min(raw.x, this._rbStartX), y = Math.min(raw.y, this._rbStartY);
+        Object.assign(this._prev.style, {
+          left:`${x}px`, top:`${y}px`,
+          width:`${Math.abs(raw.x - this._rbStartX)}px`, height:`${Math.abs(raw.y - this._rbStartY)}px`,
+        });
+      }
       if (this._isDrawing) {
         const raw = this._relPos(e);
         const p = this._snapPt(raw.x, raw.y);
@@ -802,8 +895,30 @@ createApp({
       if (this._isResizing)   { this._isResizing = false; this._resizeEdge = null; this._saveLayout(); }
       if (this._isEntResize)  { this._isEntResize = false; this._entResizeTarget = null; this._saveLayout(); }
       if (this._isRotating)   { this._isRotating  = false; this._rotEntity = null; this._saveLayout(); }
+      if (this._isDragMulti)  { this._isDragMulti = false; this._multiDragStartPositions = []; this._saveLayout(); }
       if (this._isDragIsle)   { this._isDragIsle  = false; this._dragIsle  = null; this._saveLayout(); }
       if (this._isDragZone)   { this._isDragZone  = false; this._dragZone  = null; this._saveLayout(); }
+      if (this._isRubberBand) {
+        this._isRubberBand = false;
+        const rbX = parseFloat(this._prev.style.left)  || 0;
+        const rbY = parseFloat(this._prev.style.top)   || 0;
+        const rbW = parseFloat(this._prev.style.width) || 0;
+        const rbH = parseFloat(this._prev.style.height)|| 0;
+        this._prev.style.display = 'none';
+        this._prev.classList.remove('rubber-band');
+        if (rbW > 5 || rbH > 5) {
+          for (const isle of this._isles) {
+            if (this._rectsOverlap(isle.position.x, isle.position.y, isle.dimensions.width, isle.dimensions.height, rbX, rbY, rbW, rbH))
+              this._addIsleToSelection(isle);
+          }
+          for (const zone of this._zones) {
+            if (this._rectsOverlap(zone.position.x, zone.position.y, zone.dimensions.width, zone.dimensions.height, rbX, rbY, rbW, rbH))
+              this._addZoneToSelection(zone);
+          }
+          const n = this._selIsles.length + this._selZones.length;
+          if (n > 1) this.statusText = `${n} entities selected · Drag to move · Del to delete.`;
+        }
+      }
       if (!this._isDrawing) return;
       this._isDrawing = false; this._prev.style.display = 'none';
       const raw = this._relPos(e);
@@ -885,11 +1000,28 @@ createApp({
       zone.element.addEventListener('mousedown', (e) => {
         if (e.button !== 0 || !this._editMode) return;
         e.stopPropagation(); e.preventDefault();
-        this._selectZone(zone); this._selectIsle(null);
-        this._isDragZone = true; this._dragZone = zone;
-        this._zoneDragMoved = false;
-        this._zoneSMX = e.clientX; this._zoneSMY = e.clientY;
-        this._zoneSX = zone.position.x; this._zoneSY = zone.position.y;
+        const multiKey = e.shiftKey || e.ctrlKey || e.metaKey;
+        if (multiKey) {
+          this._toggleSelectZone(zone);
+        } else if (!this._selZones.includes(zone)) {
+          this._clearAllSelection();
+          this._addZoneToSelection(zone);
+        }
+        const totalSel = this._selIsles.length + this._selZones.length;
+        if (totalSel > 1) {
+          this._isDragMulti = true;
+          this._dragMultiSMX = e.clientX; this._dragMultiSMY = e.clientY;
+          this._multiDragStartPositions = [
+            ...this._selIsles.map(i => ({ entity: i, type: 'isle', sx: i.position.x, sy: i.position.y })),
+            ...this._selZones.map(z => ({ entity: z, type: 'zone', sx: z.position.x, sy: z.position.y })),
+          ];
+          this._zoneDragMoved = false;
+        } else {
+          this._isDragZone = true; this._dragZone = zone;
+          this._zoneDragMoved = false;
+          this._zoneSMX = e.clientX; this._zoneSMY = e.clientY;
+          this._zoneSX = zone.position.x; this._zoneSY = zone.position.y;
+        }
       });
       zone.element.addEventListener('click', (e) => {
         if (this._editMode) return;
@@ -1036,11 +1168,28 @@ createApp({
       isle.element.addEventListener('mousedown', (e) => {
         if (!this._editMode || e.button !== 0) return;
         e.stopPropagation(); e.preventDefault();
-        this._selectIsle(isle); this._selectZone(null);
-        this._isDragIsle = true; this._dragIsle = isle;
-        this._isleDragMoved = false;
-        this._isleSMX = e.clientX; this._isleSMY = e.clientY;
-        this._isleSX  = isle.position.x; this._isleSY  = isle.position.y;
+        const multiKey = e.shiftKey || e.ctrlKey || e.metaKey;
+        if (multiKey) {
+          this._toggleSelectIsle(isle);
+        } else if (!this._selIsles.includes(isle)) {
+          this._clearAllSelection();
+          this._addIsleToSelection(isle);
+        }
+        const totalSel = this._selIsles.length + this._selZones.length;
+        if (totalSel > 1) {
+          this._isDragMulti = true;
+          this._dragMultiSMX = e.clientX; this._dragMultiSMY = e.clientY;
+          this._multiDragStartPositions = [
+            ...this._selIsles.map(i => ({ entity: i, type: 'isle', sx: i.position.x, sy: i.position.y })),
+            ...this._selZones.map(z => ({ entity: z, type: 'zone', sx: z.position.x, sy: z.position.y })),
+          ];
+          this._isleDragMoved = false;
+        } else {
+          this._isDragIsle = true; this._dragIsle = isle;
+          this._isleDragMoved = false;
+          this._isleSMX = e.clientX; this._isleSMY = e.clientY;
+          this._isleSX  = isle.position.x; this._isleSY  = isle.position.y;
+        }
       });
       isle.element.addEventListener('click', () => {
         if (this._drawMode || this._editMode || this._isleDragMoved) return;
@@ -1310,22 +1459,35 @@ createApp({
 
     deleteSelectedEntity() {
       if (!this._editMode) return;
-      const entity = this._selIsle || this._selZone;
-      const type   = this._selIsle ? 'isle' : this._selZone ? 'zone' : null;
-      if (!entity) return;
-      this._pendDelEnt = { entity, type };
-      if (type === 'isle') {
-        const total = entity.subsections.reduce((n, s) => n + s.shelves.reduce((m, sh) => m + sh.items.length, 0), 0);
-        this.mc_delEntTitle = `Delete Isle "${entity.label}"?`;
-        this.mc_delEntMsg   = total > 0
-          ? `This isle contains ${total} item(s). They will all be permanently removed.`
-          : `Isle "${entity.label}" will be permanently removed.`;
+      const totalSelected = this._selIsles.length + this._selZones.length;
+      if (totalSelected === 0) return;
+
+      if (totalSelected === 1) {
+        const entity = this._selIsles[0] || this._selZones[0];
+        const type   = this._selIsles.length ? 'isle' : 'zone';
+        this._pendDelEnt = { entity, type, multi: false };
+        if (type === 'isle') {
+          const total = entity.subsections.reduce((n, s) => n + s.shelves.reduce((m, sh) => m + sh.items.length, 0), 0);
+          this.mc_delEntTitle = `Delete Isle "${entity.label}"?`;
+          this.mc_delEntMsg   = total > 0
+            ? `This isle contains ${total} item(s). They will all be permanently removed.`
+            : `Isle "${entity.label}" will be permanently removed.`;
+        } else {
+          const n = entity.items?.length || 0;
+          this.mc_delEntTitle = `Delete Zone "${entity.label}"?`;
+          this.mc_delEntMsg   = n > 0
+            ? `This zone contains ${n} item(s). They will all be permanently removed.`
+            : `Zone "${entity.label}" will be permanently removed.`;
+        }
       } else {
-        const n = entity.items?.length || 0;
-        this.mc_delEntTitle = `Delete Zone "${entity.label}"?`;
-        this.mc_delEntMsg   = n > 0
-          ? `This zone contains ${n} item(s). They will all be permanently removed.`
-          : `Zone "${entity.label}" will be permanently removed.`;
+        const totalItems = this._selIsles.reduce((n, isle) =>
+          n + isle.subsections.reduce((m, s) => m + s.shelves.reduce((k, sh) => k + sh.items.length, 0), 0), 0
+        ) + this._selZones.reduce((n, z) => n + (z.items?.length || 0), 0);
+        this._pendDelEnt = { multi: true, isles: [...this._selIsles], zones: [...this._selZones] };
+        this.mc_delEntTitle = `Delete ${totalSelected} selected entities?`;
+        this.mc_delEntMsg   = totalItems > 0
+          ? `This will permanently remove ${totalSelected} entities and ${totalItems} stored item(s).`
+          : `${totalSelected} selected entities will be permanently removed.`;
       }
       this.m_delEnt = true;
     },
@@ -1333,6 +1495,35 @@ createApp({
     async confirmDeleteEntity() {
       this.m_delEnt = false;
       if (!this._pendDelEnt) return;
+
+      if (this._pendDelEnt.multi) {
+        const { isles, zones } = this._pendDelEnt;
+        this._pendDelEnt = null;
+        this._clearAllSelection();
+        for (const isle of isles) {
+          for (const sub of isle.subsections)
+            for (const shelf of sub.shelves)
+              for (const item of shelf.items)
+                await this._removeItemFromDB(item.id);
+          this._wh.querySelectorAll(`.edit-handle[data-type="isle"][data-id="${isle.id}"]`).forEach(el => el.remove());
+          isle.element.remove();
+          const idx = this._isles.indexOf(isle);
+          if (idx !== -1) this._isles.splice(idx, 1);
+        }
+        for (const zone of zones) {
+          for (const item of (zone.items || []))
+            await this._removeItemFromDB(item.id);
+          this._wh.querySelectorAll(`.edit-handle[data-type="zone"][data-id="${zone.id}"]`).forEach(el => el.remove());
+          zone.element.remove();
+          const idx = this._zones.indexOf(zone);
+          if (idx !== -1) this._zones.splice(idx, 1);
+        }
+        this.isleCountText = `Isles: ${this._isles.length}`;
+        this.statusText = `Deleted ${isles.length + zones.length} entities.`;
+        this._saveLayout();
+        return;
+      }
+
       const { entity, type } = this._pendDelEnt;
       this._pendDelEnt = null;
 
@@ -1353,13 +1544,13 @@ createApp({
       if (type === 'isle') {
         const idx = this._isles.indexOf(entity);
         if (idx !== -1) this._isles.splice(idx, 1);
-        if (this._selIsle === entity) this._selectIsle(null);
+        this._clearAllSelection();
         this.isleCountText = `Isles: ${this._isles.length}`;
         this.statusText    = `Isle "${entity.label}" deleted.`;
       } else {
         const idx = this._zones.indexOf(entity);
         if (idx !== -1) this._zones.splice(idx, 1);
-        if (this._selZone === entity) this._selectZone(null);
+        this._clearAllSelection();
         this.statusText = `Zone "${entity.label}" deleted.`;
       }
       this._saveLayout();
