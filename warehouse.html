@@ -8,103 +8,133 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="warehouse.css">
+  <!-- Critical layout — inlined to bypass any CSS-file caching issues -->
+  <style>
+    html, body { margin: 0; padding: 0; }
+    #app { display: flex !important; flex-direction: column !important; height: 100vh !important; overflow: hidden !important; }
+  </style>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 </head>
 <body>
+
+<div id="app">
 
   <!-- ── App Header: search + brand ── -->
   <header class="app-header">
     <div class="search-bar">
       <div class="search-input-wrap">
-        <input type="text" id="search-input" placeholder="Search by Item ID..." autocomplete="off"
-               oninput="onSearchInput()" onkeydown="if(event.key==='Enter') runSearch()" />
-        <button class="btn-search" onclick="runSearch()">Search</button>
-        <button class="btn-clear-search" id="btn-clear" onclick="clearSearch()" style="display:none">Clear</button>
+        <input type="text" v-model="searchQuery" placeholder="Search by Item ID..." autocomplete="off"
+               @input="onSearchInput" @keydown.enter="runSearch" />
+        <button class="btn-search" @click="runSearch">Search</button>
+        <button class="btn-clear-search" v-show="showSearchResults" @click="clearSearch">Clear</button>
       </div>
-      <div class="search-results hidden" id="search-results"></div>
+      <div class="search-results" :class="{ hidden: !showSearchResults }">
+        <div v-if="searchResults.length === 0" class="search-result-card not-found">
+          No item found matching "<strong>{{ searchQuery }}</strong>"
+        </div>
+        <div v-for="(result, idx) in searchResults" :key="idx"
+             class="search-result-card" :style="result.cardStyle"
+             @click="scrollToResult(result)" style="cursor:pointer">
+          <div class="result-line" v-html="result.html"></div>
+        </div>
+      </div>
     </div>
     <div class="brand-name">IndSurp</div>
   </header>
 
   <!-- ── Main content ── -->
   <main class="app-main">
-  <div class="warehouse-panel" id="warehouse-panel">
-    <div id="tab-bar" class="tab-bar"></div>
-    <div class="viewport" id="viewport">
-      <div class="pan-zoom-layer" id="pan-zoom-layer">
-        <div class="warehouse-wrapper" id="warehouse-wrapper">
-          <div class="warehouse" id="warehouse">
-            <div id="draw-preview"></div>
+    <div class="warehouse-panel">
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <div v-for="(wh, idx) in tabs" :key="wh.id"
+             class="tab" :class="{ active: idx === activeTabIdx }"
+             @click="switchTab(idx)" @dblclick.stop="startRenameTab(idx, $event)">
+          <span v-if="renamingTabIdx !== idx">{{ wh.name }}</span>
+          <input v-else type="text" class="tab-name-input" :value="wh.name"
+                 @blur="commitRenameTab(idx, $event)"
+                 @keydown.enter.prevent="$event.target.blur()"
+                 @keydown.escape="cancelRenameTab(idx)"
+                 ref="tabNameInput">
+          <button v-if="tabs.length > 1" class="tab-close" @click.stop="removeTab(idx)">&#x2715;</button>
+        </div>
+        <button class="btn-add-tab" title="Add new warehouse" @click="addTab">+</button>
+      </div>
+
+      <!-- Viewport -->
+      <div class="viewport" ref="viewport">
+        <div class="pan-zoom-layer" ref="panZoomLayer">
+          <div class="warehouse-wrapper" ref="warehouseWrapper" :class="{ 'edit-mode': editActive }">
+            <div class="warehouse" ref="warehouse">
+              <div ref="drawPreview" class="draw-preview-el"></div>
+            </div>
+            <div v-for="edge in ['nw','n','ne','e','se','s','sw','w']" :key="edge"
+                 :class="`rh rh-${edge}`" :data-edge="edge"
+                 @mousedown.stop.prevent="startWarehouseResize(edge, $event)">
+            </div>
           </div>
-          <div class="rh rh-nw" data-edge="nw"></div>
-          <div class="rh rh-n"  data-edge="n"></div>
-          <div class="rh rh-ne" data-edge="ne"></div>
-          <div class="rh rh-e"  data-edge="e"></div>
-          <div class="rh rh-se" data-edge="se"></div>
-          <div class="rh rh-s"  data-edge="s"></div>
-          <div class="rh rh-sw" data-edge="sw"></div>
-          <div class="rh rh-w"  data-edge="w"></div>
         </div>
       </div>
     </div>
-  </div>
   </main>
 
-  <div class="floating-menu" id="floating-menu">
-    <button class="menu-toggle-tab" id="menu-toggle-tab" onclick="toggleMenu()" title="Toggle menu">&#x203A;</button>
+  <!-- ── Floating side menu ── -->
+  <div class="floating-menu" :class="{ collapsed: menuCollapsed }">
+    <button class="menu-toggle-tab" @click="menuCollapsed = !menuCollapsed" title="Toggle menu">
+      {{ menuCollapsed ? '&#x2039;' : '&#x203A;' }}
+    </button>
     <h3>Warehouse Tools</h3>
-    <button class="btn-add-isle" id="btn-add-isle" onclick="activateDrawMode()">Add Isle</button>
-    <button class="btn-add-zone" id="btn-add-zone" onclick="activateZoneMode()">Add Zone</button>
-    <button class="btn-edit-warehouse" id="btn-edit-warehouse" onclick="activateEditMode()">Edit Warehouse</button>
-    <button class="btn-delete-entity" id="btn-delete-entity" onclick="deleteSelectedEntity()" style="display:none">&#x1F5D1; Delete Selected</button>
-    <hr style="border:none;border-top:1px solid #eee;margin:4px 0;">
-    <button class="btn-save-layout" onclick="exportLayout()">Save Layout</button>
-    <button class="btn-load-layout" onclick="triggerImport()">Load Layout</button>
-    <button class="btn-add-bg" onclick="triggerBgImport()">Add Background</button>
-    <button class="btn-clear-bg" id="btn-clear-bg" onclick="clearBackground()" style="display:none">Clear Background</button>
-    <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImportFile(this)">
-    <input type="file" id="bg-file-input" accept="image/png,image/jpeg" style="display:none" onchange="handleBgFile(this)">
-    <div class="status-msg" id="status">Click "Add Isle" then<br>draw inside the warehouse.</div>
-    <div class="isle-count" id="isle-count">Isles: 0</div>
+    <button class="btn-add-isle" :class="{ active: addIsleActive }" @click="activateDrawMode">Add Isle</button>
+    <button class="btn-add-zone" :class="{ active: addZoneActive }" @click="activateZoneMode">Add Zone</button>
+    <button class="btn-edit-warehouse" :class="{ active: editActive }" @click="activateEditMode">Edit Warehouse</button>
+    <button class="btn-delete-entity" v-show="showDelEntBtn" @click="deleteSelectedEntity">&#x1F5D1; Delete Selected</button>
+    <hr style="border:none;border-top:1px solid #334155;margin:4px 0;">
+    <button class="btn-add-bg" @click="triggerBgImport">Add Background</button>
+    <button class="btn-clear-bg" v-show="hasBg" @click="clearBackground">Clear Background</button>
+    <input type="file" ref="bgFileInput" accept="image/png,image/jpeg" style="display:none" @change="handleBgFile">
+    <div class="status-msg">{{ statusText }}</div>
+    <div class="isle-count">{{ isleCountText }}</div>
     <div style="display:flex;gap:5px;margin-top:2px;">
-      <button onclick="zoomOut()" title="Zoom Out" style="flex:1;padding:7px 4px;border:1px solid #ddd;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:18px;font-weight:700;color:#555;line-height:1;">−</button>
-      <button onclick="resetView()" title="Reset View" style="flex:1;padding:7px 4px;border:1px solid #ddd;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:13px;font-weight:700;color:#555;line-height:1;">⌂</button>
-      <button onclick="zoomIn()" title="Zoom In" style="flex:1;padding:7px 4px;border:1px solid #ddd;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:18px;font-weight:700;color:#555;line-height:1;">+</button>
+      <button @click="zoomOut" title="Zoom Out" style="flex:1;padding:7px 4px;border:1px solid #334155;border-radius:6px;background:#0f172a;cursor:pointer;font-size:18px;font-weight:700;color:#94a3b8;line-height:1;">−</button>
+      <button @click="resetView" title="Reset View" style="flex:1;padding:7px 4px;border:1px solid #334155;border-radius:6px;background:#0f172a;cursor:pointer;font-size:13px;font-weight:700;color:#94a3b8;line-height:1;">⌂</button>
+      <button @click="zoomIn" title="Zoom In" style="flex:1;padding:7px 4px;border:1px solid #334155;border-radius:6px;background:#0f172a;cursor:pointer;font-size:18px;font-weight:700;color:#94a3b8;line-height:1;">+</button>
     </div>
-    <div id="zoom-display" style="font-size:11px;color:#aaa;text-align:center;">100%</div>
+    <div style="font-size:11px;color:#475569;text-align:center;">{{ zoomText }}</div>
   </div>
 
-  <!-- ══ CREATION STEP 1: Isle name + shelves per subsection ══ -->
-  <div class="modal-overlay hidden" id="modal-count">
+  <!-- ══ STEP 1: Isle name + shelves per subsection ══ -->
+  <div class="modal-overlay" v-show="m_count">
     <div class="modal">
-      <button class="modal-close" onclick="cancelIsleCreation()" title="Close">&#x2715;</button>
+      <button class="modal-close" @click="cancelIsleCreation" title="Close">&#x2715;</button>
       <p class="modal-title">New Isle</p>
       <p class="modal-subtitle">Name this isle and set how many shelves each subsection will have.</p>
       <div class="two-col">
         <div class="form-field" style="flex:0 0 80px">
           <label>Row</label>
-          <input type="text" id="isle-row-input" placeholder="e.g. A" maxlength="10" />
+          <input type="text" v-model="f_isleRow" placeholder="e.g. A" maxlength="10" />
         </div>
         <div class="form-field">
           <label>Isle Name <span style="color:#e53935">*</span></label>
-          <input type="text" id="isle-name-input" placeholder="e.g. Aisle 1, Electronics Row" />
+          <input type="text" v-model="f_isleName" placeholder="e.g. Aisle 1, Electronics Row"
+                 ref="isleNameInput" :style="isleNameError ? 'border-color:#e53935' : ''" />
         </div>
       </div>
       <div class="form-field">
         <label>Shelves per Subsection <span style="color:#888;font-weight:400">(max 26)</span></label>
-        <input class="shelf-count-input" id="shelf-count-input" type="number" min="1" max="26" value="1" />
+        <input class="shelf-count-input" v-model.number="f_shelfCount" type="number" min="1" max="26" />
       </div>
       <div class="two-col">
         <div class="form-field">
           <label>Isle Border Color</label>
           <div class="color-pick-row">
-            <input type="color" id="isle-color-input" oninput="onIsleColorChange(this.value)" />
+            <input type="color" v-model="f_isleColor" />
             <span class="color-pick-hint">Isle border</span>
           </div>
         </div>
         <div class="form-field">
           <label>Isle Name Color</label>
           <div class="color-pick-row">
-            <input type="color" id="isle-label-color-input" oninput="onIsleLabelColorChange(this.value)" />
+            <input type="color" v-model="f_isleLabelColor" />
             <span class="color-pick-hint">Name label</span>
           </div>
         </div>
@@ -113,310 +143,338 @@
         <div class="form-field">
           <label>Shelf Border Color</label>
           <div class="color-pick-row">
-            <input type="color" id="shelf-color-input" value="#aaaaaa" />
+            <input type="color" v-model="f_shelfColor" />
             <span class="color-pick-hint">Shelf slot borders</span>
           </div>
         </div>
         <div class="form-field">
           <label>Isle Fill Color</label>
           <div class="color-pick-row">
-            <input type="color" id="isle-fill-color" value="#ffffff" oninput="onIsleFillChange()" />
+            <input type="color" v-model="f_isleFillColor" />
             <span class="color-pick-hint">Inner fill</span>
           </div>
         </div>
       </div>
       <div class="form-field">
-        <label>Isle Fill Opacity <span id="isle-fill-opacity-label" style="font-weight:400;color:#888;">0%</span></label>
-        <input type="range" id="isle-fill-opacity" min="0" max="100" value="0" oninput="onIsleFillChange()" style="width:100%;margin-top:4px;">
+        <label>Isle Fill Opacity <span style="font-weight:400;color:#888;">{{ f_isleFillOpacity }}%</span></label>
+        <input type="range" v-model.number="f_isleFillOpacity" min="0" max="100" style="width:100%;margin-top:4px;">
       </div>
       <div class="form-field">
         <label>Isle Facing</label>
         <div class="facing-group">
-          <button type="button" class="facing-opt selected" data-value="right" onclick="setFacing('right')">← Right-facing<br><span style="font-size:10px;font-weight:400;">First shelf on left</span></button>
-          <button type="button" class="facing-opt" data-value="left" onclick="setFacing('left')">Left-facing →<br><span style="font-size:10px;font-weight:400;">First shelf on right</span></button>
+          <button type="button" class="facing-opt" :class="{ selected: f_isleFacing === 'right' }"
+                  @click="f_isleFacing = 'right'">← Right-facing<br><span style="font-size:10px;font-weight:400;">First shelf on left</span></button>
+          <button type="button" class="facing-opt" :class="{ selected: f_isleFacing === 'left' }"
+                  @click="f_isleFacing = 'left'">Left-facing →<br><span style="font-size:10px;font-weight:400;">First shelf on right</span></button>
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="cancelIsleCreation()">Cancel</button>
-        <button class="btn-confirm" onclick="confirmStep1()">Next →</button>
+        <button class="btn-cancel" @click="cancelIsleCreation">Cancel</button>
+        <button class="btn-confirm" @click="confirmStep1">Next →</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ CREATION STEP 2: Subsection config ══ -->
-  <div class="modal-overlay hidden" id="modal-subsections">
+  <!-- ══ STEP 2: Subsection config ══ -->
+  <div class="modal-overlay" v-show="m_subs">
     <div class="modal">
-      <button class="modal-close" onclick="cancelIsleCreation()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="subsection-config-title">Subsection Setup</p>
+      <button class="modal-close" @click="cancelIsleCreation" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_subConfigTitle }}</p>
       <p class="modal-subtitle">Set how many subsections and where the numbering starts.</p>
       <div class="two-col">
         <div class="form-field">
           <label>Start Number</label>
-          <input type="number" id="subsection-start-input" min="1" value="1" />
+          <input type="number" v-model.number="f_subStart" min="1" />
         </div>
         <div class="form-field">
           <label>Number of Subsections</label>
-          <input type="number" id="subsection-count-input" min="1" value="1" />
+          <input type="number" v-model.number="f_subCount" min="1" />
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="goBackToStep1()">← Back</button>
-        <button class="btn-confirm" onclick="confirmStep2()">Next →</button>
+        <button class="btn-cancel" @click="goBackToStep1">← Back</button>
+        <button class="btn-confirm" @click="confirmStep2">Next →</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ CREATION STEP 3: Label shelves ══ -->
-  <div class="modal-overlay hidden" id="modal-labels">
+  <!-- ══ STEP 3: Label shelves ══ -->
+  <div class="modal-overlay" v-show="m_labels">
     <div class="modal">
-      <button class="modal-close" onclick="cancelIsleCreation()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="modal-labels-title">Label Shelves</p>
+      <button class="modal-close" @click="cancelIsleCreation" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_labelsTitle }}</p>
       <p class="modal-subtitle">These labels apply to every subsection in the isle.</p>
-      <div class="shelf-list" id="shelf-list"></div>
+      <div class="shelf-list">
+        <div v-for="(shelf, idx) in f_shelfLabelsList" :key="idx" class="shelf-row">
+          <span class="shelf-num">Shelf {{ idx + 1 }}</span>
+          <input type="text" v-model="f_shelfLabelsList[idx].label" />
+        </div>
+      </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="goBackToStep2()">← Back</button>
-        <button class="btn-confirm" onclick="confirmStep3()">Confirm</button>
+        <button class="btn-cancel" @click="goBackToStep2">← Back</button>
+        <button class="btn-confirm" @click="confirmStep3">Confirm</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ INTERACTION: Select subsection ══ -->
-  <div class="modal-overlay hidden" id="modal-subsection-select">
+  <!-- ══ Select subsection ══ -->
+  <div class="modal-overlay" v-show="m_subSel">
     <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="subsection-select-title">Select a Subsection</p>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_subSelTitle }}</p>
       <p class="modal-subtitle">Click a subsection to manage its shelves.</p>
-      <div class="select-list" id="subsection-select-list"></div>
+      <div class="select-list">
+        <div v-for="sub in mc_subSelList" :key="sub.id" class="select-row" @click="selectSubsectionFromList(sub)">
+          <span class="row-name">Subsection {{ sub.number }}</span>
+          <span class="row-meta">{{ sub.shelves.length }} shelves · {{ sub.totalItems }} items</span>
+        </div>
+      </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="closeAllModals()">Close</button>
+        <button class="btn-cancel" @click="closeAllModals">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ INTERACTION: Select shelf ══ -->
-  <div class="modal-overlay hidden" id="modal-shelf-select">
+  <!-- ══ Select shelf ══ -->
+  <div class="modal-overlay" v-show="m_shelfSel">
     <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="shelf-select-title">Select a Shelf</p>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_shelfSelTitle }}</p>
       <p class="modal-subtitle">Click a shelf to manage its items.</p>
-      <div class="select-list" id="shelf-select-list"></div>
+      <div class="select-list">
+        <div v-for="shelf in mc_shelfSelList" :key="shelf.id" class="select-row" @click="selectShelfFromList(shelf)">
+          <span class="row-name">{{ shelf.label }}</span>
+          <span class="row-meta">{{ shelf.items.length }} item{{ shelf.items.length !== 1 ? 's' : '' }}</span>
+        </div>
+      </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="backToSubsectionSelect()">← Back</button>
-        <button class="btn-confirm" onclick="openAddShelf()">+ Add Shelf</button>
+        <button class="btn-cancel" @click="backToSubsectionSelect">← Back</button>
+        <button class="btn-confirm" @click="openAddShelf">+ Add Shelf</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ INTERACTION: Add shelf ══ -->
-  <div class="modal-overlay hidden" id="modal-add-shelf">
+  <!-- ══ Add shelf ══ -->
+  <div class="modal-overlay" v-show="m_addShelf">
     <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
       <p class="modal-title">Add Shelf</p>
-      <p class="modal-subtitle" id="add-shelf-subtitle"></p>
+      <p class="modal-subtitle">{{ mc_addShelfSub }}</p>
       <div class="form-field">
         <label>Shelf Name <span style="color:#e53935">*</span></label>
-        <input type="text" id="add-shelf-name-input" placeholder="e.g. D" />
+        <input type="text" v-model="f_addShelfName" placeholder="e.g. D"
+               :style="addShelfNameError ? 'border-color:#e53935' : ''" ref="addShelfInput" />
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="backToShelfSelectFromAdd()">← Back</button>
-        <button class="btn-confirm" onclick="confirmAddShelf()">Add Shelf</button>
+        <button class="btn-cancel" @click="backToShelfSelectFromAdd">← Back</button>
+        <button class="btn-confirm" @click="confirmAddShelf">Add Shelf</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ INTERACTION: Shelf actions ══ -->
-  <div class="modal-overlay hidden" id="modal-shelf-actions">
+  <!-- ══ Shelf actions ══ -->
+  <div class="modal-overlay" v-show="m_shelfAct">
     <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="shelf-actions-title">Shelf Actions</p>
-      <p class="modal-subtitle" id="shelf-actions-subtitle"></p>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_shelfActTitle }}</p>
+      <p class="modal-subtitle">{{ mc_shelfActSub }}</p>
       <div class="action-btn-group">
-        <button class="action-btn add" onclick="openAddItem()">
+        <button class="action-btn add" @click="openAddItem">
           <span class="action-icon">＋</span>Add Item
         </button>
-        <button class="action-btn rem" onclick="openRemoveItems()">
+        <button class="action-btn rem" @click="openRemoveItems">
           <span class="action-icon">－</span>Remove Item
         </button>
-        <button class="action-btn del" onclick="deleteShelf()">
+        <button class="action-btn del" @click="deleteShelf">
           <span class="action-icon">🗑</span>Delete Shelf
         </button>
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="backToShelfSelect()">← Back</button>
+        <button class="btn-cancel" @click="backToShelfSelect">← Back</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ INTERACTION: Add item ══ -->
-  <div class="modal-overlay hidden" id="modal-add-item">
+  <!-- ══ Add item ══ -->
+  <div class="modal-overlay" v-show="m_addItem">
     <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
       <p class="modal-title">Add Item</p>
-      <p class="modal-subtitle" id="add-item-subtitle"></p>
+      <p class="modal-subtitle">{{ mc_addItemSub }}</p>
       <div class="form-field">
         <label>Item ID <span style="color:#e53935">*</span></label>
-        <input type="text" id="item-id-input" placeholder="e.g. SKU-00123" />
+        <input type="text" v-model="f_itemId" placeholder="e.g. SKU-00123"
+               :style="itemIdError ? 'border-color:#e53935' : ''" ref="itemIdInput" />
       </div>
       <div class="form-field">
         <label>Item Type</label>
-        <input type="text" id="item-type-input" placeholder="e.g. Electronics" />
+        <input type="text" v-model="f_itemType" placeholder="e.g. Electronics" />
       </div>
       <div class="form-field">
         <label>Item Category</label>
-        <input type="text" id="item-category-input" placeholder="e.g. Accessories" />
+        <input type="text" v-model="f_itemCategory" placeholder="e.g. Accessories" />
       </div>
       <div class="form-field">
         <label>Notes</label>
-        <textarea id="item-notes-input" placeholder="Any additional notes..."></textarea>
+        <textarea v-model="f_itemNotes" placeholder="Any additional notes..."></textarea>
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="backFromAddItem()">← Back</button>
-        <button class="btn-confirm" onclick="confirmAddItem()">Add Item</button>
+        <button class="btn-cancel" @click="backFromAddItem">← Back</button>
+        <button class="btn-confirm" @click="confirmAddItem">Add Item</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ ZONE: Label modal ══ -->
-  <div class="modal-overlay hidden" id="modal-zone">
+  <!-- ══ Zone label modal ══ -->
+  <div class="modal-overlay" v-show="m_zone">
     <div class="modal">
-      <button class="modal-close" onclick="cancelZoneCreation()" title="Close">&#x2715;</button>
+      <button class="modal-close" @click="cancelZoneCreation" title="Close">&#x2715;</button>
       <p class="modal-title">New Zone</p>
       <p class="modal-subtitle">Label this area of the warehouse.</p>
       <div class="form-field">
         <label>Zone Label <span style="color:#e53935">*</span></label>
-        <input type="text" id="zone-label-input" placeholder="e.g. Receiving, Break Room, Staging" />
+        <input type="text" v-model="f_zoneLabel" placeholder="e.g. Receiving, Break Room, Staging"
+               :style="zoneLabelError ? 'border-color:#e53935' : ''" ref="zoneLabelInput" />
       </div>
       <div class="two-col">
         <div class="form-field">
           <label>Zone Border Color</label>
           <div class="color-pick-row">
-            <input type="color" id="zone-color-input" oninput="onZoneColorChange(this.value)" />
+            <input type="color" v-model="f_zoneColor" />
             <span class="color-pick-hint">Border &amp; fill</span>
           </div>
         </div>
         <div class="form-field">
           <label>Zone Name Color</label>
           <div class="color-pick-row">
-            <input type="color" id="zone-name-color-input" value="#444444" oninput="onZoneNameColorChange(this.value)" />
+            <input type="color" v-model="f_zoneNameColor" />
             <span class="color-pick-hint">Label text</span>
           </div>
         </div>
       </div>
       <div class="form-field">
-        <label>Fill Opacity <span id="zone-fill-opacity-label" style="font-weight:400;color:#888;">18%</span></label>
-        <input type="range" id="zone-fill-opacity" min="0" max="100" value="18" oninput="onZoneFillOpacityChange()" style="width:100%;margin-top:4px;">
+        <label>Fill Opacity <span style="font-weight:400;color:#888;">{{ f_zoneFillOpacity }}%</span></label>
+        <input type="range" v-model.number="f_zoneFillOpacity" min="0" max="100" style="width:100%;margin-top:4px;">
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="cancelZoneCreation()">Cancel</button>
-        <button class="btn-confirm" onclick="confirmZone()">Create Zone</button>
+        <button class="btn-cancel" @click="cancelZoneCreation">Cancel</button>
+        <button class="btn-confirm" @click="confirmZone">Create Zone</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ INTERACTION: Confirm delete shelf ══ -->
-  <div class="modal-overlay hidden" id="modal-confirm-delete">
+  <!-- ══ Confirm delete shelf ══ -->
+  <div class="modal-overlay" v-show="m_confDel">
     <div class="modal">
       <p class="modal-title">Delete Shelf?</p>
-      <p class="modal-subtitle" id="confirm-delete-msg"></p>
+      <p class="modal-subtitle">{{ mc_confDelMsg }}</p>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="hide('modal-confirm-delete')">No, Keep It</button>
-        <button class="btn-danger" onclick="confirmDeleteShelf()">Yes, Delete</button>
+        <button class="btn-cancel" @click="m_confDel = false">No, Keep It</button>
+        <button class="btn-danger" v-show="mc_showDelBtn" @click="confirmDeleteShelf">Yes, Delete</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ COPY/PASTE: Paste isle name ══ -->
-  <div class="modal-overlay hidden" id="modal-paste-isle">
+  <!-- ══ Paste isle ══ -->
+  <div class="modal-overlay" v-show="m_pasteIsle">
     <div class="modal">
-      <button class="modal-close" onclick="cancelPaste()" title="Close">&#x2715;</button>
+      <button class="modal-close" @click="m_pasteIsle = false" title="Close">&#x2715;</button>
       <p class="modal-title">Paste Isle</p>
-      <p class="modal-subtitle" id="paste-isle-subtitle">All settings and structure will be copied. Items will not be copied.</p>
+      <p class="modal-subtitle">{{ mc_pasteIsleSub }}</p>
       <div class="form-field">
         <label>New Isle Name <span style="color:#e53935">*</span></label>
-        <input type="text" id="paste-isle-name" placeholder="Enter a name for the pasted isle" />
+        <input type="text" v-model="f_pasteIsleName" placeholder="Enter a name for the pasted isle"
+               :style="pasteIsleNameError ? 'border-color:#e53935' : ''" ref="pasteIsleInput" />
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="cancelPaste()">Cancel</button>
-        <button class="btn-confirm" onclick="pasteIsle()">Paste</button>
+        <button class="btn-cancel" @click="m_pasteIsle = false">Cancel</button>
+        <button class="btn-confirm" @click="pasteIsle">Paste</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ EDIT MODE: Delete isle / zone ══ -->
-  <div class="modal-overlay hidden" id="modal-delete-entity">
+  <!-- ══ Delete isle / zone ══ -->
+  <div class="modal-overlay" v-show="m_delEnt">
     <div class="modal">
-      <p class="modal-title" id="delete-entity-title">Delete?</p>
-      <p class="modal-subtitle" id="delete-entity-msg"></p>
+      <p class="modal-title">{{ mc_delEntTitle }}</p>
+      <p class="modal-subtitle">{{ mc_delEntMsg }}</p>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="hide('modal-delete-entity')">Cancel</button>
-        <button class="btn-danger" onclick="confirmDeleteEntity()">Yes, Delete</button>
+        <button class="btn-cancel" @click="m_delEnt = false">Cancel</button>
+        <button class="btn-danger" @click="confirmDeleteEntity">Yes, Delete</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ CONFIRM: Load layout ══ -->
-  <div class="modal-overlay hidden" id="modal-confirm-import">
+  <!-- ══ Remove items ══ -->
+  <div class="modal-overlay" v-show="m_rmItems">
     <div class="modal">
-      <p class="modal-title">Load Layout?</p>
-      <p class="modal-subtitle">This will replace all warehouse tabs with the loaded layout. All unsaved changes will be lost.</p>
-      <div class="modal-actions">
-        <button class="btn-cancel" onclick="hide('modal-confirm-import')">Cancel</button>
-        <button class="btn-danger" onclick="confirmImport()">Yes, Load</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ INTERACTION: Remove items ══ -->
-  <div class="modal-overlay hidden" id="modal-remove-items">
-    <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="remove-items-title">Remove Items</p>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_rmItemsTitle }}</p>
       <p class="modal-subtitle">Click to select · Ctrl+Click for multiple</p>
-      <div class="item-list" id="item-list"></div>
-      <div class="selected-count" id="selected-count">0 selected</div>
+      <div class="item-list">
+        <p v-if="mc_itemList.length === 0" class="no-items-msg">No items on this shelf.</p>
+        <div v-for="item in mc_itemList" :key="item.id"
+             class="item-row" :class="{ selected: mc_selItemIds.includes(item.id) }"
+             @click="toggleItemSel(item.id, $event.ctrlKey || $event.metaKey)">
+          <span class="item-id-label">{{ item.itemId }}</span>
+          <span class="item-meta">{{ [item.type, item.category].filter(Boolean).join(' · ') }}</span>
+          <span v-if="item.notes" class="item-meta" style="font-style:italic">{{ item.notes }}</span>
+        </div>
+      </div>
+      <div class="selected-count">{{ mc_selCount }} selected</div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="backToShelfActions()">← Back</button>
-        <button class="btn-danger" id="btn-remove-confirm" onclick="confirmRemoveItems()">Remove Selected</button>
+        <button class="btn-cancel" @click="backToShelfActions">← Back</button>
+        <button class="btn-danger" :disabled="mc_selCount === 0" @click="confirmRemoveItems">Remove Selected</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ ZONE: Item actions modal ══ -->
-  <div class="modal-overlay hidden" id="modal-zone-actions">
+  <!-- ══ Zone actions ══ -->
+  <div class="modal-overlay" v-show="m_zoneAct">
     <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="zone-actions-title">Zone</p>
-      <p class="modal-subtitle" id="zone-actions-subtitle"></p>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_zoneActTitle }}</p>
+      <p class="modal-subtitle">{{ mc_zoneActSub }}</p>
       <div class="action-btn-group">
-        <button class="action-btn add" onclick="openAddZoneItem()">
+        <button class="action-btn add" @click="openAddZoneItem">
           <span class="action-icon">＋</span>Add Item
         </button>
-        <button class="action-btn rem" onclick="openZoneItemList()">
+        <button class="action-btn rem" @click="openZoneItemList">
           <span class="action-icon">&#x2261;</span>Manage Items
         </button>
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="closeAllModals()">Close</button>
+        <button class="btn-cancel" @click="closeAllModals">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- ══ ZONE: Manage items modal ══ -->
-  <div class="modal-overlay hidden" id="modal-zone-items">
+  <!-- ══ Zone manage items ══ -->
+  <div class="modal-overlay" v-show="m_zoneItems">
     <div class="modal">
-      <button class="modal-close" onclick="closeAllModals()" title="Close">&#x2715;</button>
-      <p class="modal-title" id="zone-items-title">Zone Items</p>
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_zoneItemsTitle }}</p>
       <p class="modal-subtitle">Click to select · Ctrl+Click for multiple</p>
-      <div class="item-list" id="zone-item-list"></div>
-      <div class="selected-count" id="zone-selected-count">0 selected</div>
+      <div class="item-list">
+        <p v-if="mc_zoneItemList.length === 0" class="no-items-msg">No items in this zone.</p>
+        <div v-for="item in mc_zoneItemList" :key="item.id"
+             class="item-row" :class="{ selected: mc_selZoneItemIds.includes(item.id) }"
+             @click="toggleZoneItemSel(item.id, $event.ctrlKey || $event.metaKey)">
+          <span class="item-id-label">{{ item.itemId }}</span>
+          <span class="item-meta">{{ [item.type, item.category].filter(Boolean).join(' · ') }}</span>
+          <span v-if="item.notes" class="item-meta" style="font-style:italic">{{ item.notes }}</span>
+        </div>
+      </div>
+      <div class="selected-count">{{ mc_zoneSelCount }} selected</div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="backToZoneActions()">← Back</button>
-        <button class="btn-danger" id="btn-zone-remove-confirm" onclick="confirmRemoveZoneItems()">Remove Selected</button>
+        <button class="btn-cancel" @click="backToZoneActions">← Back</button>
+        <button class="btn-danger" :disabled="mc_zoneSelCount === 0" @click="confirmRemoveZoneItems">Remove Selected</button>
       </div>
     </div>
   </div>
 
-  <script src="warehouse.js"></script>
+</div><!-- #app -->
 
+<script src="warehouse.js"></script>
 </body>
 </html>

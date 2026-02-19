@@ -1,1568 +1,974 @@
-    /* ══════════════════════════════════════════
-       STATE
-    ══════════════════════════════════════════ */
-    const isles = [];
-    let isleCounter       = 0;
-    let subsectionCounter = 0;
-    let shelfCounter      = 0;
-    let itemCounter       = 0;
+const { createApp } = Vue;
 
-    const zones = [];
-    let zoneCounter = 0;
-    let pendingZone = null;
-    let activeZoneForItems = null;
-    let selectedZoneItemIds = new Set();
+createApp({
+  /* ══════════════════════════════════════════
+     REACTIVE STATE
+  ══════════════════════════════════════════ */
+  data() {
+    return {
+      // Modal visibility
+      m_count:     false,
+      m_subs:      false,
+      m_labels:    false,
+      m_subSel:    false,
+      m_shelfSel:  false,
+      m_addShelf:  false,
+      m_shelfAct:  false,
+      m_addItem:   false,
+      m_rmItems:   false,
+      m_confDel:   false,
+      m_zone:      false,
+      m_pasteIsle: false,
+      m_delEnt:    false,
+      m_zoneAct:   false,
+      m_zoneItems: false,
 
-    // Zone drag state
-    let isDraggingZone = false, draggingZone = null, zoneDragMoved = false;
-    let zoneStartMX = 0, zoneStartMY = 0, zoneStartX = 0, zoneStartY = 0;
+      // Form: Isle step 1
+      f_isleRow:        '',
+      f_isleName:       '',
+      f_shelfCount:     1,
+      f_isleColor:      '#4285f4',
+      f_isleLabelColor: '#4285f4',
+      f_shelfColor:     '#aaaaaa',
+      f_isleFillColor:  '#ffffff',
+      f_isleFillOpacity: 0,
+      f_isleFacing:     'right',
 
-    // Entity (isle/zone) resize state
-    let isEntityResizing = false;
-    let entityResizeTarget = null, entityResizeTargetType = null, entityResizeEdge = null;
-    let entityResizeStartMX = 0, entityResizeStartMY = 0;
-    let entityResizeStartX  = 0, entityResizeStartY  = 0;
-    let entityResizeStartW  = 0, entityResizeStartH  = 0;
+      // Form: Isle step 2
+      f_subStart: 1,
+      f_subCount: 1,
 
-    // Entity (isle/zone) rotation state
-    let isRotating = false;
-    let rotatingEntity = null, rotatingEntityType = null;
-    let rotateStartAngle = 0;
-    let rotateCenterX = 0, rotateCenterY = 0;
-    let rotateStartMouseAngle = 0;
+      // Form: Isle step 3 – shelf labels
+      f_shelfLabelsList: [], // [{label:'A'}, ...]
 
-    let currentZoom = 1;
-    let panX = 0, panY = 0;
-    let isPanning = false, panLastX = 0, panLastY = 0;
+      // Form: Zone
+      f_zoneLabel:      '',
+      f_zoneColor:      '#ff0000',
+      f_zoneNameColor:  '#444444',
+      f_zoneFillOpacity: 18,
 
-    let editMode = false;
+      // Form: misc
+      f_addShelfName:  '',
+      f_itemId:        '',
+      f_itemType:      '',
+      f_itemCategory:  '',
+      f_itemNotes:     '',
+      f_pasteIsleName: '',
 
-    // Warehouse resize state
-    let isResizing = false, resizeEdge = null;
-    let resizeStartMX = 0, resizeStartMY = 0;
-    let resizeStartW  = 0, resizeStartH  = 0;
-    let resizeStartPanX = 0, resizeStartPanY = 0;
+      // Validation error flags
+      isleNameError:     false,
+      addShelfNameError: false,
+      itemIdError:       false,
+      zoneLabelError:    false,
+      pasteIsleNameError: false,
 
-    // Isle drag state
-    let isDraggingIsle = false, draggingIsle = null;
-    let isleStartMX = 0, isleStartMY = 0;
-    let isleStartX  = 0, isleStartY  = 0;
-    let isleDragMoved = false;
+      // Modal content (dynamic)
+      mc_subConfigTitle: 'Subsection Setup',
+      mc_labelsTitle:    'Label Shelves',
+      mc_subSelTitle:    'Select a Subsection',
+      mc_subSelList:     [],
+      mc_shelfSelTitle:  'Select a Shelf',
+      mc_shelfSelList:   [],
+      mc_shelfActTitle:  'Shelf Actions',
+      mc_shelfActSub:    '',
+      mc_addShelfSub:    '',
+      mc_addItemSub:     '',
+      mc_rmItemsTitle:   'Remove Items',
+      mc_itemList:       [],
+      mc_selItemIds:     [],
+      mc_selCount:       0,
+      mc_confDelMsg:     '',
+      mc_showDelBtn:     true,
+      mc_delEntTitle:    'Delete?',
+      mc_delEntMsg:      '',
+      mc_zoneActTitle:   'Zone',
+      mc_zoneActSub:     '',
+      mc_zoneItemsTitle: 'Zone Items',
+      mc_zoneItemList:   [],
+      mc_selZoneItemIds: [],
+      mc_zoneSelCount:   0,
+      mc_pasteIsleSub:   '',
 
-    let drawMode  = null;
-    let isDrawing = false;
-    let startX = 0, startY = 0;
+      // Search
+      searchQuery:      '',
+      searchResults:    [],
+      showSearchResults: false,
 
-    // Copy/paste state
-    let selectedIsle = null; // isle highlighted in edit mode for Ctrl+C / delete
-    let copiedIsle   = null; // serialized snapshot of the last Ctrl+C'd isle
-    let selectedZone = null; // zone highlighted in edit mode for delete
+      // Status / info
+      statusText:    'Click "Add Isle" then draw inside the warehouse.',
+      isleCountText: 'Isles: 0',
+      zoomText:      '100%',
 
-    // Multi-warehouse state
-    const warehouses = [];
-    let activeWarehouseIdx = 0;
-    let warehouseTabCounter = 0;
+      // Tabs
+      tabs:         [],
+      activeTabIdx: 0,
+      renamingTabIdx: -1,
 
-    let pendingFacing    = 'right'; // 'left' | 'right'
-    let pendingIsle      = null;   // isle being constructed through the 3-step modal flow
-    let activeIsle       = null;
-    let activeSubsection = null;
-    let activeShelf      = null;
-    let selectedItemIds  = new Set();
+      // UI flags
+      editActive:    false,
+      addIsleActive: false,
+      addZoneActive: false,
+      showDelEntBtn: false,
+      hasBg:         false,
+      menuCollapsed: false,
+    };
+  },
 
-    /* ══════════════════════════════════════════
-       DOM
-    ══════════════════════════════════════════ */
-    const viewport        = document.getElementById('viewport');
-    const panZoomLayer    = document.getElementById('pan-zoom-layer');
-    const warehouseWrapper = document.getElementById('warehouse-wrapper');
-    const warehouse       = document.getElementById('warehouse');
-    const preview   = document.getElementById('draw-preview');
-    const statusEl  = document.getElementById('status');
-    const countEl   = document.getElementById('isle-count');
-
-    /* ══════════════════════════════════════════
-       UTILITIES
-    ══════════════════════════════════════════ */
-    function randomColor() { return `hsl(${Math.floor(Math.random()*360)},70%,42%)`; }
-    function randomHexColor() {
-      return '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0');
-    }
-    function hexToRgba(hex, alpha) {
-      const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-    function randomZoneColors() {
-      const h = Math.floor(Math.random()*360);
-      return { bg: `hsla(${h},60%,72%,0.22)`, border: `hsl(${h},55%,42%)` };
-    }
-    function applyIsleFill(el, fillColor, fillOpacity) {
-      el.style.background = fillOpacity > 0 ? hexToRgba(fillColor, fillOpacity / 100) : 'transparent';
-    }
-    function applyZoneFill(el, borderColor, fillOpacity) {
-      el.style.background = hexToRgba(borderColor, fillOpacity / 100);
-    }
-
-    function triggerBgImport() { document.getElementById('bg-file-input').click(); }
-    function handleBgFile(input) {
-      const file = input.files[0];
-      if (!file) return;
-      input.value = '';
-      const reader = new FileReader();
-      reader.onload = (ev) => setWarehouseBackground(ev.target.result);
-      reader.readAsDataURL(file);
-    }
-
-    function onIsleColorChange(v) {
-      if (!pendingIsle) return;
-      pendingIsle.color = v;
-      pendingIsle.element.style.borderColor = v;
-    }
-    function onIsleLabelColorChange(v) {
-      if (!pendingIsle) return;
-      pendingIsle.labelColor = v;
-      const lbl = pendingIsle.element.querySelector('.isle-label');
+  /* ══════════════════════════════════════════
+     WATCHERS – live-update pending isle/zone when color pickers change
+  ══════════════════════════════════════════ */
+  watch: {
+    f_isleColor(v) {
+      if (!this._pi) return;
+      this._pi.color = v;
+      this._pi.element.style.borderColor = v;
+    },
+    f_isleLabelColor(v) {
+      if (!this._pi) return;
+      this._pi.labelColor = v;
+      const lbl = this._pi.element.querySelector('.isle-label');
       if (lbl) lbl.style.color = v;
-    }
-    function onIsleFillChange() {
-      if (!pendingIsle) return;
-      const color   = document.getElementById('isle-fill-color').value;
-      const opacity = parseInt(document.getElementById('isle-fill-opacity').value, 10);
-      document.getElementById('isle-fill-opacity-label').textContent = opacity + '%';
-      pendingIsle.fillColor   = color;
-      pendingIsle.fillOpacity = opacity;
-      applyIsleFill(pendingIsle.element, color, opacity);
-    }
-    function onZoneColorChange(v) {
-      if (!pendingZone) return;
-      pendingZone.color = v;
-      pendingZone.element.style.borderColor = v;
-      const opacity = parseInt(document.getElementById('zone-fill-opacity').value, 10);
-      applyZoneFill(pendingZone.element, v, opacity);
-    }
-    function onZoneNameColorChange(v) {
-      if (!pendingZone) return;
-      pendingZone.labelColor = v;
-      const lbl = pendingZone.element.querySelector('.zone-label');
+    },
+    f_isleFillColor()   { this._applyPendingIsleFill(); },
+    f_isleFillOpacity() { this._applyPendingIsleFill(); },
+    f_zoneColor(v) {
+      if (!this._pz) return;
+      this._pz.color = v;
+      this._pz.element.style.borderColor = v;
+      this._applyZoneFill(this._pz.element, v, this.f_zoneFillOpacity);
+    },
+    f_zoneNameColor(v) {
+      if (!this._pz) return;
+      this._pz.labelColor = v;
+      const lbl = this._pz.element.querySelector('.zone-label');
       if (lbl) lbl.style.color = v;
-    }
-    function onZoneFillOpacityChange() {
-      if (!pendingZone) return;
-      const opacity = parseInt(document.getElementById('zone-fill-opacity').value, 10);
-      document.getElementById('zone-fill-opacity-label').textContent = opacity + '%';
-      pendingZone.fillOpacity = opacity;
-      applyZoneFill(pendingZone.element, pendingZone.color, opacity);
-    }
-    function clamp(v,lo,hi) { return Math.max(lo,Math.min(hi,v)); }
-    function getRelativePos(e) {
-      const r  = warehouse.getBoundingClientRect();
-      const bx = parseFloat(getComputedStyle(warehouse).borderLeftWidth)||0;
-      const by = parseFloat(getComputedStyle(warehouse).borderTopWidth) ||0;
-      // Divide by currentZoom to convert from viewport px to logical (CSS) px
-      const lx = (e.clientX - r.left) / currentZoom - bx;
-      const ly = (e.clientY - r.top ) / currentZoom - by;
-      return { x: clamp(lx, 0, warehouse.clientWidth),
-               y: clamp(ly, 0, warehouse.clientHeight) };
-    }
-    function show(id) { document.getElementById(id).classList.remove('hidden'); }
-    function hide(id) { document.getElementById(id).classList.add('hidden'); }
-    function escHtml(s) {
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-    function buildIsleHeaderHtml(row, label, labelColor) {
-      const badge = row ? `<span class="isle-row-badge">${escHtml(row)}</span>` : '';
-      return `${badge}<span class="isle-label" style="color:${escHtml(labelColor)}">${escHtml(label)}</span>`;
-    }
-    function closeAllModals() {
-      ['modal-count','modal-subsections','modal-labels',
-       'modal-subsection-select','modal-shelf-select','modal-add-shelf',
-       'modal-shelf-actions','modal-add-item','modal-remove-items',
-       'modal-confirm-delete','modal-zone','modal-confirm-import',
-       'modal-paste-isle','modal-delete-entity',
-       'modal-zone-actions','modal-zone-items'].forEach(hide);
-      activeIsle=null; activeSubsection=null; activeShelf=null;
-      activeZoneForItems=null;
-      selectedItemIds.clear(); selectedZoneItemIds.clear();
-    }
+    },
+    f_zoneFillOpacity(v) {
+      if (!this._pz) return;
+      this._pz.fillOpacity = v;
+      this._applyZoneFill(this._pz.element, this._pz.color, v);
+    },
+  },
 
-    function toggleMenu() {
-      const menu = document.getElementById('floating-menu');
-      const tab  = document.getElementById('menu-toggle-tab');
-      const collapsed = menu.classList.toggle('collapsed');
-      // ‹ = expand (menu is hidden, pull it back), › = collapse (menu is open, fold it away)
-      tab.innerHTML = collapsed ? '&#x2039;' : '&#x203A;';
-    }
+  /* ══════════════════════════════════════════
+     LIFECYCLE
+  ══════════════════════════════════════════ */
+  mounted() {
+    this._initNonReactive();
+    this._initDOMRefs();
+    this._initEventListeners();
+    this._loadFromDB();
+  },
 
-    function setFacing(v) {
-      pendingFacing = v;
-      document.querySelectorAll('.facing-opt').forEach(b =>
-        b.classList.toggle('selected', b.dataset.value === v));
-    }
+  /* ══════════════════════════════════════════
+     METHODS
+  ══════════════════════════════════════════ */
+  methods: {
 
-    /* ══════════════════════════════════════════
-       SNAP HELPER
-    ══════════════════════════════════════════ */
-    const SNAP_THRESHOLD = 12;
+    // ── Initialisation ──────────────────────────────────────────────────────
 
-    function snapPoint(x, y) {
-      if (isles.length === 0 && zones.length === 0) return { x, y };
-      const vEdges = [], hEdges = [];
-      for (const isle of isles) {
-        vEdges.push(isle.position.x, isle.position.x + isle.dimensions.width);
-        hEdges.push(isle.position.y, isle.position.y + isle.dimensions.height);
-      }
-      for (const zone of zones) {
-        vEdges.push(zone.position.x, zone.position.x + zone.dimensions.width);
-        hEdges.push(zone.position.y, zone.position.y + zone.dimensions.height);
-      }
-      let snapX = x, bestDX = SNAP_THRESHOLD + 1;
-      for (const ex of vEdges) { const d = Math.abs(x - ex); if (d < bestDX) { bestDX = d; snapX = ex; } }
-      let snapY = y, bestDY = SNAP_THRESHOLD + 1;
-      for (const ey of hEdges) { const d = Math.abs(y - ey); if (d < bestDY) { bestDY = d; snapY = ey; } }
-      return { x: snapX, y: snapY };
-    }
+    _initNonReactive() {
+      // All non-reactive state lives as instance vars with _ prefix
+      this._isles = [];
+      this._zones = [];
+      this._isleCounter       = 0;
+      this._subsectionCounter = 0;
+      this._shelfCounter      = 0;
+      this._itemCounter       = 0;
+      this._zoneCounter       = 0;
 
-    /* ══════════════════════════════════════════
-       ZONES
-    ══════════════════════════════════════════ */
-    function snapZoneMove(zone, newX, newY) {
-      const w = zone.dimensions.width, h = zone.dimensions.height;
-      const vEdges = [0, warehouse.clientWidth], hEdges = [0, warehouse.clientHeight];
-      for (const z of zones) {
-        if (z.id === zone.id) continue;
-        vEdges.push(z.position.x, z.position.x + z.dimensions.width);
-        hEdges.push(z.position.y, z.position.y + z.dimensions.height);
-      }
-      for (const isle of isles) {
-        vEdges.push(isle.position.x, isle.position.x + isle.dimensions.width);
-        hEdges.push(isle.position.y, isle.position.y + isle.dimensions.height);
-      }
-      let bestX = newX, bestDX = SNAP_THRESHOLD + 1;
-      for (const ve of vEdges) {
-        const dl = Math.abs(newX - ve), dr = Math.abs(newX + w - ve);
-        if (dl < bestDX) { bestDX = dl; bestX = ve; }
-        if (dr < bestDX) { bestDX = dr; bestX = ve - w; }
-      }
-      let bestY = newY, bestDY = SNAP_THRESHOLD + 1;
-      for (const he of hEdges) {
-        const dt = Math.abs(newY - he), db = Math.abs(newY + h - he);
-        if (dt < bestDY) { bestDY = dt; bestY = he; }
-        if (db < bestDY) { bestDY = db; bestY = he - h; }
-      }
-      return { x: bestX, y: bestY };
-    }
+      this._warehouses        = [];
+      this._activeWhIdx       = 0;
+      this._whTabCounter      = 0;
 
-    function beginZoneCreation(x, y, w, h) {
-      const color = randomHexColor();
-      const id = ++zoneCounter;
-      const el = document.createElement('div');
-      el.className = 'zone';
-      Object.assign(el.style, {
-        left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`,
-        borderColor: color, background: hexToRgba(color, 0.18),
+      // Drawing
+      this._drawMode  = null;
+      this._isDrawing = false;
+      this._startX = 0; this._startY = 0;
+
+      // Pan / zoom
+      this._currentZoom = 1;
+      this._panX = 0; this._panY = 0;
+      this._isPanning = false;
+      this._panLastX  = 0; this._panLastY = 0;
+
+      // Warehouse resize
+      this._isResizing      = false; this._resizeEdge = null;
+      this._resizeStartMX   = 0; this._resizeStartMY = 0;
+      this._resizeStartW    = 0; this._resizeStartH  = 0;
+      this._resizeStartPanX = 0; this._resizeStartPanY = 0;
+
+      // Entity resize
+      this._isEntResize      = false;
+      this._entResizeTarget  = null; this._entResizeType = null;
+      this._entResizeEdge    = null;
+      this._entResizeSMX = 0; this._entResizeSMY = 0;
+      this._entResizeSX  = 0; this._entResizeSY  = 0;
+      this._entResizeSW  = 0; this._entResizeSH  = 0;
+
+      // Entity rotation
+      this._isRotating     = false;
+      this._rotEntity      = null; this._rotEntityType = null;
+      this._rotStartAngle  = 0;
+      this._rotCX = 0; this._rotCY = 0;
+      this._rotStartMouseAngle = 0;
+
+      // Isle drag
+      this._isDragIsle   = false; this._dragIsle = null;
+      this._isleSMX = 0; this._isleSMY = 0;
+      this._isleSX  = 0; this._isleSY  = 0;
+      this._isleDragMoved = false;
+
+      // Zone drag
+      this._isDragZone   = false; this._dragZone = null;
+      this._zoneDragMoved = false;
+      this._zoneSMX = 0; this._zoneSMY = 0;
+      this._zoneSX  = 0; this._zoneSY  = 0;
+
+      // Active selections
+      this._pi   = null;  // pending isle
+      this._pz   = null;  // pending zone
+      this._ai   = null;  // active isle
+      this._asub = null;  // active subsection
+      this._ash  = null;  // active shelf
+      this._azfi = null;  // active zone for items
+      this._selIsle   = null;
+      this._selZone   = null;
+      this._copiedIsle = null;
+      this._pendDelEnt = null;
+
+      this._selItemIds     = new Set();
+      this._selZoneItemIds = new Set();
+      this._warehouseBg    = null;
+
+      this._SNAP = 12;
+      this._EDGES = ['nw','n','ne','e','se','s','sw','w'];
+    },
+
+    _initDOMRefs() {
+      this._vp  = this.$refs.viewport;
+      this._pzl = this.$refs.panZoomLayer;
+      this._ww  = this.$refs.warehouseWrapper;
+      this._wh  = this.$refs.warehouse;
+      this._prev = this.$refs.drawPreview;
+    },
+
+    _initEventListeners() {
+      // Scroll-wheel zoom
+      this._vp.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const vr = this._vp.getBoundingClientRect();
+        this._zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - vr.left, e.clientY - vr.top);
+      }, { passive: false });
+
+      // Middle-mouse pan start
+      this._vp.addEventListener('mousedown', (e) => {
+        if (e.button === 1) {
+          this._isPanning = true; this._panLastX = e.clientX; this._panLastY = e.clientY;
+          this._vp.classList.add('panning'); e.preventDefault();
+        }
       });
-      el.dataset.zoneId = id;
-      const labelEl = document.createElement('div');
-      labelEl.className = 'zone-label';
-      labelEl.textContent = '…';
-      el.appendChild(labelEl);
-      warehouse.appendChild(el);
-      pendingZone = { id, label:'', color, fillOpacity:18, labelColor:'#444444', rotation:0,
-                      position:{x,y}, dimensions:{width:w,height:h},
-                      items:[], element:el, createdAt:new Date().toISOString() };
-      document.getElementById('zone-label-input').value = '';
-      document.getElementById('zone-label-input').style.borderColor = '';
-      document.getElementById('zone-color-input').value = color;
-      document.getElementById('zone-name-color-input').value = '#444444';
-      document.getElementById('zone-fill-opacity').value = 18;
-      document.getElementById('zone-fill-opacity-label').textContent = '18%';
-      show('modal-zone');
-      document.getElementById('zone-label-input').focus();
-    }
 
-    function confirmZone() {
-      const inp = document.getElementById('zone-label-input');
-      const label = inp.value.trim();
-      if (!label) { inp.style.borderColor = '#e53935'; inp.focus(); return; }
-      inp.style.borderColor = '';
-      const color      = document.getElementById('zone-color-input').value;
-      const fillOpacity = parseInt(document.getElementById('zone-fill-opacity').value, 10);
-      const labelColor  = document.getElementById('zone-name-color-input').value || '#444444';
-      pendingZone.label       = label;
-      pendingZone.color       = color;
-      pendingZone.fillOpacity = fillOpacity;
-      pendingZone.labelColor  = labelColor;
-      pendingZone.element.style.borderColor = color;
-      applyZoneFill(pendingZone.element, color, fillOpacity);
-      const zoneLblEl = pendingZone.element.querySelector('.zone-label');
-      zoneLblEl.textContent = label;
-      zoneLblEl.style.color = labelColor;
-      zones.push(pendingZone);
-      attachZoneHandlers(pendingZone);
-      statusEl.textContent = `Zone "${label}" added.`;
-      pendingZone = null;
-      hide('modal-zone');
-    }
-
-    function cancelZoneCreation() {
-      if (pendingZone) { pendingZone.element.remove(); pendingZone = null; zoneCounter--; }
-      hide('modal-zone');
-    }
-
-    function attachZoneHandlers(zone) {
-      zone.element.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (!editMode) return;
-        e.stopPropagation(); e.preventDefault();
-        selectZone(zone);
-        selectIsle(null);
-        isDraggingZone = true;
-        draggingZone   = zone;
-        zoneDragMoved  = false;
-        zoneStartMX    = e.clientX;
-        zoneStartMY    = e.clientY;
-        zoneStartX     = zone.position.x;
-        zoneStartY     = zone.position.y;
+      // Warehouse: edit-handle and draw-mode mousedown
+      this._wh.addEventListener('mousedown', (e) => {
+        // Edit handle
+        const handle = e.target.closest('.edit-handle');
+        if (handle && this._editMode && e.button === 0) {
+          e.stopPropagation(); e.preventDefault();
+          const type   = handle.dataset.type;
+          const id     = parseInt(handle.dataset.id);
+          const entity = type === 'isle' ? this._isles.find(i => i.id === id) : this._zones.find(z => z.id === id);
+          if (!entity) return;
+          if (handle.dataset.edge === 'rotate') {
+            this._isRotating = true;
+            this._rotEntity = entity; this._rotEntityType = type;
+            this._rotStartAngle = entity.rotation || 0;
+            const wr = this._wh.getBoundingClientRect();
+            const bx = parseFloat(getComputedStyle(this._wh).borderLeftWidth) || 0;
+            const by = parseFloat(getComputedStyle(this._wh).borderTopWidth)  || 0;
+            this._rotCX = wr.left + (entity.position.x + entity.dimensions.width  / 2 + bx) * this._currentZoom;
+            this._rotCY = wr.top  + (entity.position.y + entity.dimensions.height / 2 + by) * this._currentZoom;
+            this._rotStartMouseAngle = Math.atan2(e.clientY - this._rotCY, e.clientX - this._rotCX) * 180 / Math.PI;
+          } else {
+            this._isEntResize = true;
+            this._entResizeTarget = entity; this._entResizeType = type;
+            this._entResizeEdge   = handle.dataset.edge;
+            this._entResizeSMX = e.clientX; this._entResizeSMY = e.clientY;
+            this._entResizeSX  = entity.position.x;    this._entResizeSY  = entity.position.y;
+            this._entResizeSW  = entity.dimensions.width; this._entResizeSH = entity.dimensions.height;
+          }
+          return;
+        }
+        // Draw mode
+        if (!this._drawMode || e.button !== 0 || e.target.closest('.isle') || e.target.closest('.zone')) return;
+        this._isDrawing = true;
+        const p = this._snapPt(...Object.values(this._relPos(e)));
+        this._startX = p.x; this._startY = p.y;
+        Object.assign(this._prev.style, { left:`${p.x}px`, top:`${p.y}px`, width:'0', height:'0', display:'block' });
+        e.preventDefault();
       });
-      zone.element.addEventListener('click', (e) => {
-        if (editMode) return;
-        e.stopPropagation();
-        openZoneActions(zone);
-      });
-    }
 
-    /* ══════════════════════════════════════════
-       PAN / ZOOM
-    ══════════════════════════════════════════ */
-    function applyTransform() {
-      panZoomLayer.style.transform = `translate(${panX}px,${panY}px) scale(${currentZoom})`;
-    }
-    function updateZoomDisplay() {
-      document.getElementById('zoom-display').textContent = `${Math.round(currentZoom * 100)}%`;
-    }
-    function zoomAt(factor, cx, cy) {
-      const nz = Math.min(Math.max(currentZoom * factor, 0.02), 50);
-      panX = cx - (cx - panX) * (nz / currentZoom);
-      panY = cy - (cy - panY) * (nz / currentZoom);
-      currentZoom = nz;
-      applyTransform(); updateZoomDisplay();
-    }
-    function zoomIn()  { const vr=viewport.getBoundingClientRect(); zoomAt(1.25, vr.width/2, vr.height/2); }
-    function zoomOut() { const vr=viewport.getBoundingClientRect(); zoomAt(1/1.25, vr.width/2, vr.height/2); }
-    function resetView() {
-      currentZoom = 1;
-      const vr = viewport.getBoundingClientRect();
-      panX = (vr.width  - warehouse.offsetWidth)  / 2;
-      panY = (vr.height - warehouse.offsetHeight) / 2;
-      applyTransform(); updateZoomDisplay();
-    }
-    window.addEventListener('load', () => {
-      warehouseTabCounter = 1;
-      warehouses.push({
+      // Global mousemove
+      window.addEventListener('mousemove', (e) => { this._onMouseMove(e); });
+
+      // Global mouseup
+      window.addEventListener('mouseup', (e) => { this._onMouseUp(e); });
+
+      // Keyboard
+      document.addEventListener('keydown', (e) => { this._onKeyDown(e); });
+
+      // Drag-and-drop background image
+      this._vp.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault(); this._wh.classList.add('drag-over');
+      });
+      this._vp.addEventListener('dragleave', (e) => {
+        if (!this._vp.contains(e.relatedTarget)) this._wh.classList.remove('drag-over');
+      });
+      this._vp.addEventListener('drop', (e) => {
+        e.preventDefault(); this._wh.classList.remove('drag-over');
+        const file = [...e.dataTransfer.files].find(f => /^image\/(png|jpeg)$/.test(f.type));
+        if (!file) { this.statusText = 'Only PNG or JPG images supported.'; return; }
+        const reader = new FileReader();
+        reader.onload = (ev) => this._setWarehouseBg(ev.target.result);
+        reader.readAsDataURL(file);
+      });
+      document.addEventListener('dragover', e => e.preventDefault());
+      document.addEventListener('drop',     e => e.preventDefault());
+    },
+
+    // ── DB / API ─────────────────────────────────────────────────────────────
+
+    async _loadFromDB() {
+      try {
+        const [layoutResp, itemsResp] = await Promise.all([
+          fetch('/api/layout'),
+          fetch('/api/items'),
+        ]);
+        const layoutData = await layoutResp.json();
+        const items      = await itemsResp.json();
+
+        if (layoutData.warehouses && layoutData.warehouses.length > 0) {
+          this._mergeItems(layoutData, items);
+          this._importAllWarehouses(layoutData);
+        } else {
+          this._freshWarehouse();
+        }
+      } catch (err) {
+        console.error('Load from DB failed:', err);
+        this._freshWarehouse();
+      }
+    },
+
+    _freshWarehouse() {
+      this._whTabCounter = 1;
+      this._activeWhIdx  = 0;
+      this._warehouses.push({
         id: 1, name: 'Warehouse 1',
         width: 800, height: 500, background: null,
-        counters: { isleCounter: 0, subsectionCounter: 0, shelfCounter: 0, itemCounter: 0, zoneCounter: 0 },
+        counters: { isleCounter:0, subsectionCounter:0, shelfCounter:0, itemCounter:0, zoneCounter:0 },
         isles: [], zones: [],
       });
-      renderTabs();
-      resetView();
-    });
+      // Render the warehouse square and set its inline dimensions before centering
+      this._loadWarehouseDOM(this._warehouses[0]);
+      this._syncTabs();
+      // Persist the initial warehouse so subsequent loads find it in the DB
+      this._saveLayout();
+      this.$nextTick(() => this._resetView());
+    },
 
-    // Scroll-wheel zoom centred on cursor
-    viewport.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const vr = viewport.getBoundingClientRect();
-      zoomAt(e.deltaY < 0 ? 1.1 : 1/1.1, e.clientX - vr.left, e.clientY - vr.top);
-    }, { passive: false });
-
-    // Middle-mouse pan
-    viewport.addEventListener('mousedown', (e) => {
-      if (e.button === 1) {
-        isPanning = true; panLastX = e.clientX; panLastY = e.clientY;
-        viewport.classList.add('panning'); e.preventDefault();
-      }
-    });
-
-    /* ══════════════════════════════════════════
-       EDIT WAREHOUSE MODE
-    ══════════════════════════════════════════ */
-    const HANDLE_EDGES = ['nw','n','ne','e','se','s','sw','w'];
-
-    function edgePositions(x, y, w, h, rotation) {
-      const cx = x + w / 2, cy = y + h / 2;
-      const angle = ((rotation || 0) * Math.PI) / 180;
-      const cos = Math.cos(angle), sin = Math.sin(angle);
-      function rp(lx, ly) {
-        return { cx: cx + lx * cos - ly * sin, cy: cy + lx * sin + ly * cos };
-      }
-      return {
-        nw: rp(-w/2, -h/2),  n: rp(0,    -h/2),  ne: rp(w/2,  -h/2),
-        e:  rp(w/2,  0),     se: rp(w/2,  h/2),  s:  rp(0,     h/2),
-        sw: rp(-w/2, h/2),   w:  rp(-w/2, 0),
-        rotate: rp(0, -(h / 2 + 25)),
-      };
-    }
-
-    function createHandlesForEntity(entity, type) {
-      const pos = edgePositions(entity.position.x, entity.position.y,
-                                entity.dimensions.width, entity.dimensions.height,
-                                entity.rotation || 0);
-      for (const edge of [...HANDLE_EDGES, 'rotate']) {
-        const el = document.createElement('div');
-        el.className    = 'edit-handle';
-        el.dataset.edge = edge;
-        el.dataset.type = type;
-        el.dataset.id   = entity.id;
-        el.style.left   = pos[edge].cx + 'px';
-        el.style.top    = pos[edge].cy + 'px';
-        warehouse.appendChild(el);
-      }
-    }
-
-    function updateHandlesForEntity(entity, type) {
-      const pos = edgePositions(entity.position.x, entity.position.y,
-                                entity.dimensions.width, entity.dimensions.height,
-                                entity.rotation || 0);
-      document.querySelectorAll(`.edit-handle[data-type="${type}"][data-id="${entity.id}"]`)
-        .forEach(el => {
-          const p = pos[el.dataset.edge];
-          if (p) { el.style.left = p.cx + 'px'; el.style.top = p.cy + 'px'; }
-        });
-    }
-
-    function createEditHandles() {
-      removeEditHandles();
-      isles.forEach(e => createHandlesForEntity(e, 'isle'));
-      zones.forEach(e => createHandlesForEntity(e, 'zone'));
-    }
-
-    function removeEditHandles() {
-      document.querySelectorAll('.edit-handle').forEach(el => el.remove());
-    }
-
-    function activateEditMode() {
-      if (editMode) { cancelEditMode(); return; }
-      if (drawMode) cancelDrawMode();
-      editMode = true;
-      warehouseWrapper.classList.add('edit-mode');
-      document.getElementById('btn-edit-warehouse').classList.add('active');
-      statusEl.innerHTML = 'Drag to move · Blue handles to resize · Click to select · Del to delete.';
-      createEditHandles();
-    }
-    function cancelEditMode() {
-      editMode = false;
-      isEntityResizing = false; entityResizeTarget = null;
-      isleDragMoved = false;
-      selectIsle(null);
-      selectZone(null);
-      warehouseWrapper.classList.remove('edit-mode');
-      document.getElementById('btn-edit-warehouse').classList.remove('active');
-      document.getElementById('btn-delete-entity').style.display = 'none';
-      statusEl.innerHTML = 'Click "Add Isle" then<br>draw inside the warehouse.';
-      removeEditHandles();
-    }
-
-    function selectIsle(isle) {
-      if (selectedIsle && selectedIsle.element) {
-        selectedIsle.element.classList.remove('isle-selected');
-      }
-      selectedIsle = isle;
-      if (isle && isle.element) isle.element.classList.add('isle-selected');
-      updateDeleteBtn();
-    }
-
-    function selectZone(zone) {
-      if (selectedZone && selectedZone.element) {
-        selectedZone.element.classList.remove('zone-selected');
-      }
-      selectedZone = zone;
-      if (zone && zone.element) zone.element.classList.add('zone-selected');
-      updateDeleteBtn();
-    }
-
-    function updateDeleteBtn() {
-      const btn = document.getElementById('btn-delete-entity');
-      if (btn) btn.style.display = (editMode && (selectedIsle || selectedZone)) ? '' : 'none';
-    }
-
-    let pendingDeleteEntity = null; // { entity, type }
-
-    function deleteSelectedEntity() {
-      if (!editMode) return;
-      const entity = selectedIsle || selectedZone;
-      const type   = selectedIsle ? 'isle' : selectedZone ? 'zone' : null;
-      if (!entity) return;
-
-      pendingDeleteEntity = { entity, type };
-
-      if (type === 'isle') {
-        const totalItems = entity.subsections.reduce((n, sub) => n + sub.shelves.reduce((m, sh) => m + sh.items.length, 0), 0);
-        document.getElementById('delete-entity-title').textContent = `Delete Isle "${entity.label}"?`;
-        document.getElementById('delete-entity-msg').textContent =
-          totalItems > 0
-            ? `This isle contains ${totalItems} item(s). They will all be permanently removed.`
-            : `Isle "${entity.label}" will be permanently removed.`;
-      } else {
-        const zoneItemCount = entity.items ? entity.items.length : 0;
-        document.getElementById('delete-entity-title').textContent = `Delete Zone "${entity.label}"?`;
-        document.getElementById('delete-entity-msg').textContent =
-          zoneItemCount > 0
-            ? `This zone contains ${zoneItemCount} item(s). They will all be permanently removed.`
-            : `Zone "${entity.label}" will be permanently removed.`;
-      }
-      show('modal-delete-entity');
-    }
-
-    function confirmDeleteEntity() {
-      hide('modal-delete-entity');
-      if (!pendingDeleteEntity) return;
-      const { entity, type } = pendingDeleteEntity;
-      pendingDeleteEntity = null;
-
-      // Remove DOM element and edit handles
-      document.querySelectorAll(`.edit-handle[data-type="${type}"][data-id="${entity.id}"]`)
-        .forEach(el => el.remove());
-      entity.element.remove();
-
-      if (type === 'isle') {
-        const idx = isles.indexOf(entity);
-        if (idx !== -1) isles.splice(idx, 1);
-        if (selectedIsle === entity) selectIsle(null);
-        countEl.textContent = `Isles: ${isles.length}`;
-        statusEl.textContent = `Isle "${entity.label}" deleted.`;
-      } else {
-        const idx = zones.indexOf(entity);
-        if (idx !== -1) zones.splice(idx, 1);
-        if (selectedZone === entity) selectZone(null);
-        statusEl.textContent = `Zone "${entity.label}" deleted.`;
-      }
-    }
-
-    function snapIsleMove(isle, newX, newY) {
-      const w = isle.dimensions.width, h = isle.dimensions.height;
-      const vEdges = [0, warehouse.clientWidth],  hEdges = [0, warehouse.clientHeight];
-      for (const o of isles) {
-        if (o.id === isle.id) continue;
-        vEdges.push(o.position.x, o.position.x + o.dimensions.width);
-        hEdges.push(o.position.y, o.position.y + o.dimensions.height);
-      }
-      for (const z of zones) {
-        vEdges.push(z.position.x, z.position.x + z.dimensions.width);
-        hEdges.push(z.position.y, z.position.y + z.dimensions.height);
-      }
-      let bestX = newX, bestDX = SNAP_THRESHOLD + 1;
-      for (const ve of vEdges) {
-        const dl = Math.abs(newX     - ve), dr = Math.abs(newX + w - ve);
-        if (dl < bestDX) { bestDX = dl; bestX = ve;     }
-        if (dr < bestDX) { bestDX = dr; bestX = ve - w; }
-      }
-      let bestY = newY, bestDY = SNAP_THRESHOLD + 1;
-      for (const he of hEdges) {
-        const dt = Math.abs(newY     - he), db = Math.abs(newY + h - he);
-        if (dt < bestDY) { bestDY = dt; bestY = he;     }
-        if (db < bestDY) { bestDY = db; bestY = he - h; }
-      }
-      return { x: bestX, y: bestY };
-    }
-
-    // Attach resize handle events
-    document.querySelectorAll('.rh').forEach(handle => {
-      handle.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation(); e.preventDefault();
-        isResizing      = true;
-        resizeEdge      = handle.dataset.edge;
-        resizeStartMX   = e.clientX;
-        resizeStartMY   = e.clientY;
-        resizeStartW    = warehouse.clientWidth;
-        resizeStartH    = warehouse.clientHeight;
-        resizeStartPanX = panX;
-        resizeStartPanY = panY;
-      });
-    });
-
-    /* ══════════════════════════════════════════
-       DRAW MODE
-    ══════════════════════════════════════════ */
-    function activateDrawMode() {
-      if (drawMode === 'isle') { cancelDrawMode(); return; }
-      if (drawMode) cancelDrawMode();
-      if (editMode) cancelEditMode();
-      drawMode = 'isle';
-      warehouse.classList.add('drawing-mode');
-      document.getElementById('btn-add-isle').classList.add('active');
-      statusEl.textContent = 'Click & drag to draw an isle.';
-    }
-    function activateZoneMode() {
-      if (drawMode === 'zone') { cancelDrawMode(); return; }
-      if (drawMode) cancelDrawMode();
-      if (editMode) cancelEditMode();
-      drawMode = 'zone';
-      warehouse.classList.add('drawing-mode');
-      document.getElementById('btn-add-zone').classList.add('active');
-      statusEl.textContent = 'Click & drag to draw a zone.';
-    }
-    function cancelDrawMode() {
-      drawMode=null; isDrawing=false;
-      warehouse.classList.remove('drawing-mode');
-      document.getElementById('btn-add-isle').classList.remove('active');
-      document.getElementById('btn-add-zone').classList.remove('active');
-      preview.style.display='none';
-      statusEl.innerHTML='Click "Add Isle" then<br>draw inside the warehouse.';
-    }
-
-    // Handle mousedown for entity (isle/zone) resize or rotate in edit mode
-    warehouse.addEventListener('mousedown', (e) => {
-      const handle = e.target.closest('.edit-handle');
-      if (!handle || !editMode || e.button !== 0) return;
-      e.stopPropagation(); e.preventDefault();
-      const type   = handle.dataset.type;
-      const id     = parseInt(handle.dataset.id);
-      const entity = type === 'isle' ? isles.find(i => i.id===id) : zones.find(z => z.id===id);
-      if (!entity) return;
-
-      if (handle.dataset.edge === 'rotate') {
-        // Start rotation
-        isRotating         = true;
-        rotatingEntity     = entity;
-        rotatingEntityType = type;
-        rotateStartAngle   = entity.rotation || 0;
-        const wRect = warehouse.getBoundingClientRect();
-        const bx = parseFloat(getComputedStyle(warehouse).borderLeftWidth) || 0;
-        const by = parseFloat(getComputedStyle(warehouse).borderTopWidth)  || 0;
-        rotateCenterX = wRect.left + (entity.position.x + entity.dimensions.width  / 2 + bx) * currentZoom;
-        rotateCenterY = wRect.top  + (entity.position.y + entity.dimensions.height / 2 + by) * currentZoom;
-        rotateStartMouseAngle = Math.atan2(e.clientY - rotateCenterY, e.clientX - rotateCenterX) * 180 / Math.PI;
-      } else {
-        // Start resize
-        isEntityResizing       = true;
-        entityResizeTarget     = entity;
-        entityResizeTargetType = type;
-        entityResizeEdge       = handle.dataset.edge;
-        entityResizeStartMX    = e.clientX;
-        entityResizeStartMY    = e.clientY;
-        entityResizeStartX     = entity.position.x;
-        entityResizeStartY     = entity.position.y;
-        entityResizeStartW     = entity.dimensions.width;
-        entityResizeStartH     = entity.dimensions.height;
-      }
-    });
-
-    warehouse.addEventListener('mousedown', (e) => {
-      if (!drawMode || e.button!==0 || e.target.closest('.isle') || e.target.closest('.zone')) return;
-      isDrawing=true;
-      const p=snapPoint(...Object.values(getRelativePos(e))); startX=p.x; startY=p.y;
-      Object.assign(preview.style,{left:`${startX}px`,top:`${startY}px`,width:'0px',height:'0px',display:'block'});
-      e.preventDefault();
-    });
-    window.addEventListener('mousemove', (e) => {
-      // Pan
-      if (isPanning) {
-        panX += e.clientX - panLastX; panY += e.clientY - panLastY;
-        panLastX = e.clientX; panLastY = e.clientY;
-        applyTransform();
-      }
-      // Warehouse resize
-      if (isResizing) {
-        const dxVP = e.clientX - resizeStartMX;
-        const dyVP = e.clientY - resizeStartMY;
-        const dxL  = dxVP / currentZoom, dyL = dyVP / currentZoom;
-        let newW = resizeStartW, newH = resizeStartH;
-        let newPanX = resizeStartPanX, newPanY = resizeStartPanY;
-        if (resizeEdge.includes('e')) newW  = Math.max(150, resizeStartW + dxL);
-        if (resizeEdge.includes('w')) { newW = Math.max(150, resizeStartW - dxL); newPanX = resizeStartPanX + (resizeStartW - newW) * currentZoom; }
-        if (resizeEdge.includes('s')) newH  = Math.max(100, resizeStartH + dyL);
-        if (resizeEdge.includes('n')) { newH = Math.max(100, resizeStartH - dyL); newPanY = resizeStartPanY + (resizeStartH - newH) * currentZoom; }
-        warehouse.style.width  = newW + 'px';
-        warehouse.style.height = newH + 'px';
-        panX = newPanX; panY = newPanY;
-        applyTransform();
-      }
-      // Entity (isle/zone) resize
-      if (isEntityResizing && entityResizeTarget) {
-        const dxL = (e.clientX - entityResizeStartMX) / currentZoom;
-        const dyL = (e.clientY - entityResizeStartMY) / currentZoom;
-        const MIN = 30;
-        let newX = entityResizeStartX, newY = entityResizeStartY;
-        let newW = entityResizeStartW, newH = entityResizeStartH;
-        const edge = entityResizeEdge;
-        if (edge.includes('e')) newW = Math.max(MIN, entityResizeStartW + dxL);
-        if (edge.includes('w')) { newW = Math.max(MIN, entityResizeStartW - dxL); newX = entityResizeStartX + entityResizeStartW - newW; }
-        if (edge.includes('s')) newH = Math.max(MIN, entityResizeStartH + dyL);
-        if (edge.includes('n')) { newH = Math.max(MIN, entityResizeStartH - dyL); newY = entityResizeStartY + entityResizeStartH - newH; }
-        // Clamp within warehouse for isles; zones may extend outside
-        if (entityResizeTargetType === 'isle') {
-          newX = Math.max(0, newX);
-          newY = Math.max(0, newY);
-          newW = Math.min(newW, warehouse.clientWidth  - newX);
-          newH = Math.min(newH, warehouse.clientHeight - newY);
+    _mergeItems(layoutData, items) {
+      for (const wh of (layoutData.warehouses || [])) {
+        for (const isle of (wh.isles || [])) {
+          for (const sub of (isle.subsections || [])) {
+            for (const shelf of (sub.shelves || [])) {
+              shelf.items = items
+                .filter(it => it.shelf_id === shelf.id && it.location_type === 'shelf')
+                .map(it => ({
+                  id: it.id, itemId: it.item_id,
+                  type: it.item_type, category: it.category,
+                  notes: it.notes, addedAt: it.added_at,
+                  shelfId: it.shelf_id, subsectionId: it.subsection_id, isleId: it.isle_id,
+                }));
+            }
+          }
         }
-        entityResizeTarget.position.x          = newX;
-        entityResizeTarget.position.y          = newY;
-        entityResizeTarget.dimensions.width    = newW;
-        entityResizeTarget.dimensions.height   = newH;
-        const el = entityResizeTarget.element;
-        el.style.left = newX+'px'; el.style.top  = newY+'px';
-        el.style.width= newW+'px'; el.style.height=newH+'px';
-        updateHandlesForEntity(entityResizeTarget, entityResizeTargetType);
+        for (const zone of (wh.zones || [])) {
+          zone.items = items
+            .filter(it => it.zone_id === zone.id && it.location_type === 'zone')
+            .map(it => ({
+              id: it.id, itemId: it.item_id,
+              type: it.item_type, category: it.category,
+              notes: it.notes, addedAt: it.added_at,
+              zoneId: it.zone_id,
+            }));
+        }
       }
-      // Entity rotation
-      if (isRotating && rotatingEntity) {
-        const currentMouseAngle = Math.atan2(e.clientY - rotateCenterY, e.clientX - rotateCenterX) * 180 / Math.PI;
-        let newRotation = rotateStartAngle + (currentMouseAngle - rotateStartMouseAngle);
-        if (e.shiftKey) newRotation = Math.round(newRotation / 15) * 15;
-        rotatingEntity.rotation = newRotation;
-        rotatingEntity.element.style.transform = `rotate(${newRotation}deg)`;
-        updateHandlesForEntity(rotatingEntity, rotatingEntityType);
+    },
+
+    async _saveLayout() {
+      this._serializeCurrentWarehouse();
+      const data = {
+        version: 2,
+        activeWarehouseIdx: this._activeWhIdx,
+        warehouses: this._warehouses.map(wh => ({
+          ...wh,
+          isles: (wh.isles || []).map(isle => ({
+            ...isle,
+            subsections: (isle.subsections || []).map(sub => ({
+              ...sub,
+              shelves: (sub.shelves || []).map(({ items, element, ...rest }) => rest),
+            })),
+          })),
+          zones: (wh.zones || []).map(({ items, element, ...rest }) => rest),
+        })),
+      };
+      try {
+        await fetch('/api/layout', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data }),
+        });
+      } catch (err) { console.error('Save layout failed:', err); }
+    },
+
+    async _addItemToDB(payload) {
+      const resp = await fetch('/api/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await resp.json();
+      return result.id;
+    },
+
+    async _removeItemFromDB(dbId) {
+      try {
+        await fetch(`/api/items/${dbId}`, { method: 'DELETE' });
+      } catch (err) { console.error('Delete item failed:', err); }
+    },
+
+    // ── Utilities ────────────────────────────────────────────────────────────
+
+    _rndHex() {
+      return '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0');
+    },
+    _hexRgba(hex, alpha) {
+      const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    },
+    _applyIsleFill(el, fillColor, fillOpacity) {
+      el.style.background = fillOpacity > 0 ? this._hexRgba(fillColor, fillOpacity / 100) : 'transparent';
+    },
+    _applyZoneFill(el, borderColor, fillOpacity) {
+      el.style.background = this._hexRgba(borderColor, fillOpacity / 100);
+    },
+    _applyPendingIsleFill() {
+      if (!this._pi) return;
+      const c = this.f_isleFillColor, o = this.f_isleFillOpacity;
+      this._pi.fillColor   = c;
+      this._pi.fillOpacity = o;
+      this._applyIsleFill(this._pi.element, c, o);
+    },
+    _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); },
+    _escH(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    },
+    _isleHeaderHtml(row, label, labelColor) {
+      const badge = row ? `<span class="isle-row-badge">${this._escH(row)}</span>` : '';
+      return `${badge}<span class="isle-label" style="color:${this._escH(labelColor)}">${this._escH(label)}</span>`;
+    },
+    _relPos(e) {
+      const r  = this._wh.getBoundingClientRect();
+      const bx = parseFloat(getComputedStyle(this._wh).borderLeftWidth) || 0;
+      const by = parseFloat(getComputedStyle(this._wh).borderTopWidth)  || 0;
+      const lx = (e.clientX - r.left) / this._currentZoom - bx;
+      const ly = (e.clientY - r.top)  / this._currentZoom - by;
+      return { x: this._clamp(lx, 0, this._wh.clientWidth), y: this._clamp(ly, 0, this._wh.clientHeight) };
+    },
+
+    // ── Snapping ─────────────────────────────────────────────────────────────
+
+    _snapPt(x, y) {
+      if (!this._isles.length && !this._zones.length) return { x, y };
+      const vE = [], hE = [];
+      for (const i of this._isles) { vE.push(i.position.x, i.position.x + i.dimensions.width);  hE.push(i.position.y, i.position.y + i.dimensions.height); }
+      for (const z of this._zones) { vE.push(z.position.x, z.position.x + z.dimensions.width); hE.push(z.position.y, z.position.y + z.dimensions.height); }
+      let sx = x, bdx = this._SNAP + 1;
+      for (const ex of vE) { const d = Math.abs(x - ex); if (d < bdx) { bdx = d; sx = ex; } }
+      let sy = y, bdy = this._SNAP + 1;
+      for (const ey of hE) { const d = Math.abs(y - ey); if (d < bdy) { bdy = d; sy = ey; } }
+      return { x: sx, y: sy };
+    },
+
+    _snapIsleMove(isle, nx, ny) {
+      const w = isle.dimensions.width, h = isle.dimensions.height;
+      const vE = [0, this._wh.clientWidth], hE = [0, this._wh.clientHeight];
+      for (const o of this._isles) {
+        if (o.id === isle.id) continue;
+        vE.push(o.position.x, o.position.x + o.dimensions.width);
+        hE.push(o.position.y, o.position.y + o.dimensions.height);
       }
-      // Isle drag
-      if (isDraggingIsle && draggingIsle) {
-        const dxL = (e.clientX - isleStartMX) / currentZoom;
-        const dyL = (e.clientY - isleStartMY) / currentZoom;
-        if (Math.abs(dxL) > 2 || Math.abs(dyL) > 2) isleDragMoved = true;
-        let newX = clamp(isleStartX + dxL, 0, warehouse.clientWidth  - draggingIsle.dimensions.width);
-        let newY = clamp(isleStartY + dyL, 0, warehouse.clientHeight - draggingIsle.dimensions.height);
-        const snapped = snapIsleMove(draggingIsle, newX, newY);
-        draggingIsle.position.x = snapped.x;
-        draggingIsle.position.y = snapped.y;
-        draggingIsle.element.style.left = snapped.x + 'px';
-        draggingIsle.element.style.top  = snapped.y + 'px';
-        if (editMode) updateHandlesForEntity(draggingIsle, 'isle');
+      for (const z of this._zones) { vE.push(z.position.x, z.position.x + z.dimensions.width); hE.push(z.position.y, z.position.y + z.dimensions.height); }
+      let bx = nx, bdx = this._SNAP + 1;
+      for (const ve of vE) {
+        const dl = Math.abs(nx - ve), dr = Math.abs(nx + w - ve);
+        if (dl < bdx) { bdx = dl; bx = ve; } if (dr < bdx) { bdx = dr; bx = ve - w; }
       }
-      // Zone drag (no warehouse-bounds clamping — zones may be placed outside)
-      if (isDraggingZone && draggingZone) {
-        const dxL = (e.clientX - zoneStartMX) / currentZoom;
-        const dyL = (e.clientY - zoneStartMY) / currentZoom;
-        if (Math.abs(dxL) > 2 || Math.abs(dyL) > 2) zoneDragMoved = true;
-        let newX = zoneStartX + dxL;
-        let newY = zoneStartY + dyL;
-        const snapped = snapZoneMove(draggingZone, newX, newY);
-        draggingZone.position.x = snapped.x;
-        draggingZone.position.y = snapped.y;
-        draggingZone.element.style.left = snapped.x + 'px';
-        draggingZone.element.style.top  = snapped.y + 'px';
-        if (editMode) updateHandlesForEntity(draggingZone, 'zone');
+      let by = ny, bdy = this._SNAP + 1;
+      for (const he of hE) {
+        const dt = Math.abs(ny - he), db = Math.abs(ny + h - he);
+        if (dt < bdy) { bdy = dt; by = he; } if (db < bdy) { bdy = db; by = he - h; }
       }
-      // Draw preview
-      if (!isDrawing) return;
-      const raw=getRelativePos(e);
-      const p=snapPoint(raw.x,raw.y);
-      const x=Math.min(p.x,startX), y=Math.min(p.y,startY);
-      Object.assign(preview.style,{left:`${x}px`,top:`${y}px`,width:`${Math.abs(p.x-startX)}px`,height:`${Math.abs(p.y-startY)}px`});
-    });
-    window.addEventListener('mouseup', (e) => {
-      if (e.button === 1) { isPanning = false; viewport.classList.remove('panning'); }
-      if (isResizing)       { isResizing = false; resizeEdge = null; }
-      if (isEntityResizing) { isEntityResizing = false; entityResizeTarget = null; }
-      if (isRotating)       { isRotating = false; rotatingEntity = null; }
-      if (isDraggingIsle)   { isDraggingIsle = false; draggingIsle = null; }
-      if (isDraggingZone)   { isDraggingZone = false; draggingZone = null; }
-      if (!isDrawing) return;
-      isDrawing=false; preview.style.display='none';
-      const raw=getRelativePos(e);
-      const p=snapPoint(raw.x,raw.y);
-      const x=Math.min(p.x,startX), y=Math.min(p.y,startY);
-      const w=Math.abs(p.x-startX), h=Math.abs(p.y-startY);
-      if (w<10||h<10) return;
-      const mode=drawMode;
-      cancelDrawMode();
-      if (mode==='zone') beginZoneCreation(x,y,w,h);
-      else               beginIsleCreation(x,y,w,h);
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { cancelDrawMode(); cancelEditMode(); return; }
-      // Don't intercept shortcuts when typing in an input / textarea
+      return { x: bx, y: by };
+    },
+
+    _snapZoneMove(zone, nx, ny) {
+      const w = zone.dimensions.width, h = zone.dimensions.height;
+      const vE = [0, this._wh.clientWidth], hE = [0, this._wh.clientHeight];
+      for (const z of this._zones) {
+        if (z.id === zone.id) continue;
+        vE.push(z.position.x, z.position.x + z.dimensions.width);
+        hE.push(z.position.y, z.position.y + z.dimensions.height);
+      }
+      for (const i of this._isles) { vE.push(i.position.x, i.position.x + i.dimensions.width); hE.push(i.position.y, i.position.y + i.dimensions.height); }
+      let bx = nx, bdx = this._SNAP + 1;
+      for (const ve of vE) {
+        const dl = Math.abs(nx - ve), dr = Math.abs(nx + w - ve);
+        if (dl < bdx) { bdx = dl; bx = ve; } if (dr < bdx) { bdx = dr; bx = ve - w; }
+      }
+      let by = ny, bdy = this._SNAP + 1;
+      for (const he of hE) {
+        const dt = Math.abs(ny - he), db = Math.abs(ny + h - he);
+        if (dt < bdy) { bdy = dt; by = he; } if (db < bdy) { bdy = db; by = he - h; }
+      }
+      return { x: bx, y: by };
+    },
+
+    // ── Pan / Zoom ────────────────────────────────────────────────────────────
+
+    _applyTransform() {
+      this._pzl.style.transform = `translate(${this._panX}px,${this._panY}px) scale(${this._currentZoom})`;
+    },
+    _zoomAt(factor, cx, cy) {
+      const nz = Math.min(Math.max(this._currentZoom * factor, 0.02), 50);
+      this._panX = cx - (cx - this._panX) * (nz / this._currentZoom);
+      this._panY = cy - (cy - this._panY) * (nz / this._currentZoom);
+      this._currentZoom = nz;
+      this._applyTransform();
+      this.zoomText = `${Math.round(this._currentZoom * 100)}%`;
+    },
+    zoomIn()    { const vr = this._vp.getBoundingClientRect(); this._zoomAt(1.25, vr.width/2, vr.height/2); },
+    zoomOut()   { const vr = this._vp.getBoundingClientRect(); this._zoomAt(1/1.25, vr.width/2, vr.height/2); },
+    resetView() {
+      this._currentZoom = 1;
+      const vr = this._vp.getBoundingClientRect();
+      // Guard: if viewport hasn't been laid out yet, defer and retry
+      if (vr.width === 0 || vr.height === 0) {
+        requestAnimationFrame(() => this.resetView());
+        return;
+      }
+      this._panX = (vr.width  - this._wh.offsetWidth)  / 2;
+      this._panY = (vr.height - this._wh.offsetHeight) / 2;
+      this._applyTransform();
+      this.zoomText = '100%';
+    },
+    _resetView() { this.resetView(); },
+
+    // ── Warehouse resize handles ──────────────────────────────────────────────
+
+    startWarehouseResize(edge, e) {
+      this._isResizing    = true;
+      this._resizeEdge    = edge;
+      this._resizeStartMX = e.clientX; this._resizeStartMY = e.clientY;
+      this._resizeStartW  = this._wh.clientWidth; this._resizeStartH = this._wh.clientHeight;
+      this._resizeStartPanX = this._panX; this._resizeStartPanY = this._panY;
+    },
+
+    // ── Edit mode ────────────────────────────────────────────────────────────
+
+    _edgePositions(entity) {
+      const { x, y } = entity.position, { width: w, height: h } = entity.dimensions;
+      const cx = x + w/2, cy = y + h/2;
+      const angle = ((entity.rotation || 0) * Math.PI) / 180;
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      const rp = (lx, ly) => ({ cx: cx + lx*cos - ly*sin, cy: cy + lx*sin + ly*cos });
+      return {
+        nw: rp(-w/2,-h/2),  n: rp(0,-h/2),   ne: rp(w/2,-h/2),
+        e:  rp(w/2,0),     se: rp(w/2,h/2),   s:  rp(0,h/2),
+        sw: rp(-w/2,h/2),   w: rp(-w/2,0),
+        rotate: rp(0, -(h/2 + 25)),
+      };
+    },
+
+    _createHandles(entity, type) {
+      const pos = this._edgePositions(entity);
+      for (const edge of [...this._EDGES, 'rotate']) {
+        const el = document.createElement('div');
+        el.className = 'edit-handle';
+        el.dataset.edge = edge; el.dataset.type = type; el.dataset.id = entity.id;
+        el.style.left = pos[edge].cx + 'px'; el.style.top = pos[edge].cy + 'px';
+        this._wh.appendChild(el);
+      }
+    },
+    _updateHandles(entity, type) {
+      const pos = this._edgePositions(entity);
+      this._wh.querySelectorAll(`.edit-handle[data-type="${type}"][data-id="${entity.id}"]`).forEach(el => {
+        const p = pos[el.dataset.edge];
+        if (p) { el.style.left = p.cx + 'px'; el.style.top = p.cy + 'px'; }
+      });
+    },
+    _createAllHandles() {
+      this._removeAllHandles();
+      this._isles.forEach(e => this._createHandles(e, 'isle'));
+      this._zones.forEach(e => this._createHandles(e, 'zone'));
+    },
+    _removeAllHandles() {
+      this._wh.querySelectorAll('.edit-handle').forEach(el => el.remove());
+    },
+
+    activateEditMode() {
+      if (this._editMode) { this._cancelEditMode(); return; }
+      if (this._drawMode) this._cancelDrawMode();
+      this._editMode = true; this.editActive = true;
+      this.statusText = 'Drag to move · Blue handles to resize · Click to select · Del to delete.';
+      this._createAllHandles();
+    },
+    _cancelEditMode() {
+      this._editMode = false; this.editActive = false;
+      this._isEntResize = false; this._entResizeTarget = null;
+      this._isleDragMoved = false;
+      this._selectIsle(null); this._selectZone(null);
+      this.showDelEntBtn = false;
+      this.statusText = 'Click "Add Isle" then draw inside the warehouse.';
+      this._removeAllHandles();
+    },
+
+    _selectIsle(isle) {
+      if (this._selIsle && this._selIsle.element) this._selIsle.element.classList.remove('isle-selected');
+      this._selIsle = isle;
+      if (isle && isle.element) isle.element.classList.add('isle-selected');
+      this._updateDelBtn();
+    },
+    _selectZone(zone) {
+      if (this._selZone && this._selZone.element) this._selZone.element.classList.remove('zone-selected');
+      this._selZone = zone;
+      if (zone && zone.element) zone.element.classList.add('zone-selected');
+      this._updateDelBtn();
+    },
+    _updateDelBtn() {
+      this.showDelEntBtn = this._editMode && !!(this._selIsle || this._selZone);
+    },
+
+    // ── Draw mode ────────────────────────────────────────────────────────────
+
+    activateDrawMode() {
+      if (this._drawMode === 'isle') { this._cancelDrawMode(); return; }
+      if (this._drawMode) this._cancelDrawMode();
+      if (this._editMode) this._cancelEditMode();
+      this._drawMode = 'isle'; this.addIsleActive = true;
+      this._wh.classList.add('drawing-mode');
+      this.statusText = 'Click & drag to draw an isle.';
+    },
+    activateZoneMode() {
+      if (this._drawMode === 'zone') { this._cancelDrawMode(); return; }
+      if (this._drawMode) this._cancelDrawMode();
+      if (this._editMode) this._cancelEditMode();
+      this._drawMode = 'zone'; this.addZoneActive = true;
+      this._wh.classList.add('drawing-mode');
+      this.statusText = 'Click & drag to draw a zone.';
+    },
+    _cancelDrawMode() {
+      this._drawMode = null; this._isDrawing = false;
+      this.addIsleActive = false; this.addZoneActive = false;
+      this._wh.classList.remove('drawing-mode');
+      this._prev.style.display = 'none';
+      this.statusText = 'Click "Add Isle" then draw inside the warehouse.';
+    },
+
+    // ── Mouse events ─────────────────────────────────────────────────────────
+
+    _onMouseMove(e) {
+      if (this._isPanning) {
+        this._panX += e.clientX - this._panLastX; this._panY += e.clientY - this._panLastY;
+        this._panLastX = e.clientX; this._panLastY = e.clientY;
+        this._applyTransform();
+      }
+      if (this._isResizing) {
+        const dx = (e.clientX - this._resizeStartMX) / this._currentZoom;
+        const dy = (e.clientY - this._resizeStartMY) / this._currentZoom;
+        let nw = this._resizeStartW, nh = this._resizeStartH;
+        let npx = this._resizeStartPanX, npy = this._resizeStartPanY;
+        const edge = this._resizeEdge;
+        if (edge.includes('e')) nw = Math.max(150, nw + dx);
+        if (edge.includes('w')) { nw = Math.max(150, nw - dx); npx = this._resizeStartPanX + (this._resizeStartW - nw) * this._currentZoom; }
+        if (edge.includes('s')) nh = Math.max(100, nh + dy);
+        if (edge.includes('n')) { nh = Math.max(100, nh - dy); npy = this._resizeStartPanY + (this._resizeStartH - nh) * this._currentZoom; }
+        this._wh.style.width = nw + 'px'; this._wh.style.height = nh + 'px';
+        this._panX = npx; this._panY = npy; this._applyTransform();
+      }
+      if (this._isEntResize && this._entResizeTarget) {
+        const dx = (e.clientX - this._entResizeSMX) / this._currentZoom;
+        const dy = (e.clientY - this._entResizeSMY) / this._currentZoom;
+        const MIN = 30; const edge = this._entResizeEdge;
+        let nx = this._entResizeSX, ny = this._entResizeSY, nw = this._entResizeSW, nh = this._entResizeSH;
+        if (edge.includes('e')) nw = Math.max(MIN, nw + dx);
+        if (edge.includes('w')) { nw = Math.max(MIN, nw - dx); nx = this._entResizeSX + this._entResizeSW - nw; }
+        if (edge.includes('s')) nh = Math.max(MIN, nh + dy);
+        if (edge.includes('n')) { nh = Math.max(MIN, nh - dy); ny = this._entResizeSY + this._entResizeSH - nh; }
+        if (this._entResizeType === 'isle') {
+          nx = Math.max(0, nx); ny = Math.max(0, ny);
+          nw = Math.min(nw, this._wh.clientWidth  - nx);
+          nh = Math.min(nh, this._wh.clientHeight - ny);
+        }
+        const t = this._entResizeTarget;
+        t.position.x = nx; t.position.y = ny; t.dimensions.width = nw; t.dimensions.height = nh;
+        const el = t.element;
+        el.style.left = nx+'px'; el.style.top  = ny+'px'; el.style.width = nw+'px'; el.style.height = nh+'px';
+        this._updateHandles(t, this._entResizeType);
+      }
+      if (this._isRotating && this._rotEntity) {
+        const ma = Math.atan2(e.clientY - this._rotCY, e.clientX - this._rotCX) * 180 / Math.PI;
+        let nr = this._rotStartAngle + (ma - this._rotStartMouseAngle);
+        if (e.shiftKey) nr = Math.round(nr / 15) * 15;
+        this._rotEntity.rotation = nr;
+        this._rotEntity.element.style.transform = `rotate(${nr}deg)`;
+        this._updateHandles(this._rotEntity, this._rotEntityType);
+      }
+      if (this._isDragIsle && this._dragIsle) {
+        const dx = (e.clientX - this._isleSMX) / this._currentZoom;
+        const dy = (e.clientY - this._isleSMY) / this._currentZoom;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._isleDragMoved = true;
+        const nx = this._clamp(this._isleSX + dx, 0, this._wh.clientWidth  - this._dragIsle.dimensions.width);
+        const ny = this._clamp(this._isleSY + dy, 0, this._wh.clientHeight - this._dragIsle.dimensions.height);
+        const sn = this._snapIsleMove(this._dragIsle, nx, ny);
+        this._dragIsle.position.x = sn.x; this._dragIsle.position.y = sn.y;
+        this._dragIsle.element.style.left = sn.x + 'px'; this._dragIsle.element.style.top = sn.y + 'px';
+        if (this._editMode) this._updateHandles(this._dragIsle, 'isle');
+      }
+      if (this._isDragZone && this._dragZone) {
+        const dx = (e.clientX - this._zoneSMX) / this._currentZoom;
+        const dy = (e.clientY - this._zoneSMY) / this._currentZoom;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._zoneDragMoved = true;
+        const sn = this._snapZoneMove(this._dragZone, this._zoneSX + dx, this._zoneSY + dy);
+        this._dragZone.position.x = sn.x; this._dragZone.position.y = sn.y;
+        this._dragZone.element.style.left = sn.x + 'px'; this._dragZone.element.style.top = sn.y + 'px';
+        if (this._editMode) this._updateHandles(this._dragZone, 'zone');
+      }
+      if (this._isDrawing) {
+        const raw = this._relPos(e);
+        const p = this._snapPt(raw.x, raw.y);
+        const x = Math.min(p.x, this._startX), y = Math.min(p.y, this._startY);
+        Object.assign(this._prev.style, {
+          left:`${x}px`, top:`${y}px`,
+          width:`${Math.abs(p.x-this._startX)}px`, height:`${Math.abs(p.y-this._startY)}px`,
+        });
+      }
+    },
+
+    _onMouseUp(e) {
+      if (e.button === 1) { this._isPanning = false; this._vp.classList.remove('panning'); }
+      if (this._isResizing)   { this._isResizing = false; this._resizeEdge = null; this._saveLayout(); }
+      if (this._isEntResize)  { this._isEntResize = false; this._entResizeTarget = null; this._saveLayout(); }
+      if (this._isRotating)   { this._isRotating  = false; this._rotEntity = null; this._saveLayout(); }
+      if (this._isDragIsle)   { this._isDragIsle  = false; this._dragIsle  = null; this._saveLayout(); }
+      if (this._isDragZone)   { this._isDragZone  = false; this._dragZone  = null; this._saveLayout(); }
+      if (!this._isDrawing) return;
+      this._isDrawing = false; this._prev.style.display = 'none';
+      const raw = this._relPos(e);
+      const p = this._snapPt(raw.x, raw.y);
+      const x = Math.min(p.x, this._startX), y = Math.min(p.y, this._startY);
+      const w = Math.abs(p.x - this._startX), h = Math.abs(p.y - this._startY);
+      if (w < 10 || h < 10) return;
+      const mode = this._drawMode;
+      this._cancelDrawMode();
+      if (mode === 'zone') this._beginZoneCreation(x, y, w, h);
+      else                 this._beginIsleCreation(x, y, w, h);
+    },
+
+    _onKeyDown(e) {
+      if (e.key === 'Escape') { this._cancelDrawMode(); this._cancelEditMode(); return; }
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (editMode && selectedIsle) { copySelectedIsle(); e.preventDefault(); }
+        if (this._editMode && this._selIsle) { this._copyIsle(); e.preventDefault(); }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        if (editMode && copiedIsle) { openPasteModal(); e.preventDefault(); }
+        if (this._editMode && this._copiedIsle) { this._openPasteModal(); e.preventDefault(); }
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && editMode) {
-        if (selectedIsle || selectedZone) { deleteSelectedEntity(); e.preventDefault(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this._editMode) {
+        if (this._selIsle || this._selZone) { this.deleteSelectedEntity(); e.preventDefault(); }
       }
-    });
+    },
 
-    /* ══════════════════════════════════════════
-       ISLE CREATION — STEP 1: name + shelves/subsection
-    ══════════════════════════════════════════ */
-    function beginIsleCreation(x,y,w,h) {
-      const color = randomHexColor();
-      const id    = ++isleCounter;
+    // ── Zone creation ────────────────────────────────────────────────────────
 
-      // Draw placeholder isle on canvas
+    _beginZoneCreation(x, y, w, h) {
+      const color = this._rndHex();
+      const id = ++this._zoneCounter;
       const el = document.createElement('div');
-      el.className='isle';
-      Object.assign(el.style,{left:`${x}px`,top:`${y}px`,width:`${w}px`,height:`${h}px`,borderColor:color});
-      el.dataset.isleId=id;
-      el.innerHTML=`<div class="isle-header"><span class="isle-label" style="color:${color}">…</span></div>`;
-      warehouse.appendChild(el);
+      el.className = 'zone';
+      Object.assign(el.style, { left:`${x}px`, top:`${y}px`, width:`${w}px`, height:`${h}px`, borderColor: color });
+      el.dataset.zoneId = id;
+      this._applyZoneFill(el, color, 18);
+      const lblEl = document.createElement('div');
+      lblEl.className = 'zone-label';
+      lblEl.textContent = '…';
+      el.appendChild(lblEl);
+      this._wh.appendChild(el);
+      this._pz = { id, label:'', color, fillOpacity:18, labelColor:'#444444', rotation:0,
+                   position:{x,y}, dimensions:{width:w,height:h}, items:[], element:el,
+                   createdAt: new Date().toISOString() };
+      this.f_zoneLabel = ''; this.f_zoneColor = color;
+      this.f_zoneNameColor = '#444444'; this.f_zoneFillOpacity = 18;
+      this.zoneLabelError = false;
+      this.m_zone = true;
+      this.$nextTick(() => this.$refs.zoneLabelInput?.focus());
+    },
 
-      pendingIsle = { id, label:'', row:'', color, shelfColor:'#aaaaaa',
-                      fillColor:'#ffffff', fillOpacity:0, labelColor:color, rotation:0,
-                      position:{x,y}, dimensions:{width:w,height:h}, element:el,
-                      shelfCount:1, shelfLabels:[], subsectionStart:1, subsectionCount:1,
-                      facing:'right', subsections:[], createdAt:new Date().toISOString() };
+    confirmZone() {
+      const label = this.f_zoneLabel.trim();
+      if (!label) { this.zoneLabelError = true; return; }
+      this.zoneLabelError = false;
+      this._pz.label      = label;
+      this._pz.color      = this.f_zoneColor;
+      this._pz.fillOpacity = this.f_zoneFillOpacity;
+      this._pz.labelColor  = this.f_zoneNameColor;
+      this._pz.element.style.borderColor = this.f_zoneColor;
+      this._applyZoneFill(this._pz.element, this.f_zoneColor, this.f_zoneFillOpacity);
+      const lblEl = this._pz.element.querySelector('.zone-label');
+      lblEl.textContent = label; lblEl.style.color = this.f_zoneNameColor;
+      this._zones.push(this._pz);
+      this._attachZoneHandlers(this._pz);
+      this.statusText = `Zone "${label}" added.`;
+      this._pz = null; this.m_zone = false;
+      this._saveLayout();
+    },
 
-      document.getElementById('isle-row-input').value='';
-      document.getElementById('isle-name-input').value='';
-      document.getElementById('isle-name-input').style.borderColor='';
-      document.getElementById('shelf-count-input').value=1;
-      document.getElementById('isle-color-input').value=color;
-      document.getElementById('isle-label-color-input').value=color;
-      document.getElementById('shelf-color-input').value='#aaaaaa';
-      document.getElementById('isle-fill-color').value='#ffffff';
-      document.getElementById('isle-fill-opacity').value=0;
-      document.getElementById('isle-fill-opacity-label').textContent='0%';
-      setFacing('right');
-      show('modal-count');
-      document.getElementById('isle-name-input').focus();
-    }
+    cancelZoneCreation() {
+      if (this._pz) { this._pz.element.remove(); this._pz = null; this._zoneCounter--; }
+      this.m_zone = false;
+    },
 
-    function confirmStep1() {
-      const nameEl = document.getElementById('isle-name-input');
-      const name   = nameEl.value.trim();
-      if (!name) { nameEl.style.borderColor='#e53935'; nameEl.focus(); return; }
-      nameEl.style.borderColor='';
-
-      const count = Math.min(Math.max(parseInt(document.getElementById('shelf-count-input').value,10)||1,1),26);
-      pendingIsle.label      = name;
-      pendingIsle.shelfCount = count;
-      pendingIsle.facing     = pendingFacing;
-      pendingIsle.shelfColor  = document.getElementById('shelf-color-input').value || '#aaaaaa';
-      pendingIsle.fillColor   = document.getElementById('isle-fill-color').value || '#ffffff';
-      pendingIsle.fillOpacity = parseInt(document.getElementById('isle-fill-opacity').value, 10) || 0;
-      pendingIsle.row         = document.getElementById('isle-row-input').value.trim();
-      pendingIsle.labelColor  = document.getElementById('isle-label-color-input').value || pendingIsle.color;
-      const isleHeader = pendingIsle.element.querySelector('.isle-header');
-      if (isleHeader) isleHeader.innerHTML = buildIsleHeaderHtml(pendingIsle.row, name, pendingIsle.labelColor);
-
-      hide('modal-count');
-      document.getElementById('subsection-config-title').textContent = `Subsection Setup — ${name}`;
-      document.getElementById('subsection-start-input').value=1;
-      document.getElementById('subsection-count-input').value=1;
-      show('modal-subsections');
-      document.getElementById('subsection-count-input').focus();
-    }
-
-    function goBackToStep1() { hide('modal-subsections'); show('modal-count'); }
-
-    /* ══════════════════════════════════════════
-       ISLE CREATION — STEP 2: subsection config
-    ══════════════════════════════════════════ */
-    function confirmStep2() {
-      const start = Math.max(parseInt(document.getElementById('subsection-start-input').value,10)||1,1);
-      const count = Math.max(parseInt(document.getElementById('subsection-count-input').value,10)||1,1);
-      pendingIsle.subsectionStart = start;
-      pendingIsle.subsectionCount = count;
-
-      hide('modal-subsections');
-
-      // Build shelf label inputs
-      const list = document.getElementById('shelf-list');
-      list.innerHTML='';
-      for (let i=1; i<=pendingIsle.shelfCount; i++) {
-        const letter = String.fromCharCode(64+i);
-        const row = document.createElement('div');
-        row.className='shelf-row';
-        row.innerHTML=`<span class="shelf-num">Shelf ${i}</span><input type="text" value="${letter}" />`;
-        list.appendChild(row);
-      }
-      document.getElementById('modal-labels-title').textContent=`Label Shelves — ${pendingIsle.label}`;
-      show('modal-labels');
-      list.querySelector('input')?.focus();
-    }
-
-    function goBackToStep2() { hide('modal-labels'); show('modal-subsections'); }
-
-    function cancelIsleCreation() {
-      if (pendingIsle) { pendingIsle.element.remove(); pendingIsle=null; isleCounter--; }
-      ['modal-count','modal-subsections','modal-labels'].forEach(hide);
-    }
-
-    /* ══════════════════════════════════════════
-       ISLE CREATION — STEP 3: finalize
-    ══════════════════════════════════════════ */
-    function confirmStep3() {
-      const shelfLabels = [...document.querySelectorAll('#shelf-list input')]
-        .map((inp,idx) => inp.value.trim() || String.fromCharCode(65+idx));
-      pendingIsle.shelfLabels = shelfLabels;
-
-      const { subsectionStart, subsectionCount, shelfCount, element:isleEl, id:isleId } = pendingIsle;
-
-      // Build isle body with subsection rects
-      const body = document.createElement('div');
-      body.className='isle-body';
-
-      const facing     = pendingIsle.facing;
-      const shelfColor = pendingIsle.shelfColor || '#aaaaaa';
-
-      for (let s=0; s<subsectionCount; s++) {
-        const num   = subsectionStart + s;
-
-        const subEl = document.createElement('div');
-        subEl.className = `subsection facing-${facing}`;
-        subEl.dataset.subsectionNum = num;
-
-        // Subsection number label
-        const subNumEl = document.createElement('div');
-        subNumEl.className = 'sub-number';
-        subNumEl.textContent = num;
-        subEl.appendChild(subNumEl);
-
-        // Shelf slots row with wall indicator
-        const shelvesDiv = document.createElement('div');
-        shelvesDiv.className = 'sub-shelves';
-
-        const wallEl = document.createElement('div');
-        wallEl.className = 'wall-indicator';
-
-        const subId   = ++subsectionCounter;
-        const shelves = shelfLabels.map((lbl, j) => ({
-          id:           ++shelfCounter,
-          isleId,
-          subsectionId: subId,
-          shelfNumber:  j+1,
-          label:        lbl,
-          items:        [],
-          element:      null,
-        }));
-
-        const makeSlot = (shelf) => {
-          const slot = document.createElement('div');
-          slot.className = 'shelf-slot';
-          slot.textContent = shelf.label;
-          slot.style.borderColor = shelfColor;
-          shelf.element = slot;
-          return slot;
-        };
-
-        if (facing === 'left') {
-          // Wall on right; shelves reversed so first shelf (A) is rightmost
-          [...shelves].reverse().forEach(shelf => shelvesDiv.appendChild(makeSlot(shelf)));
-          shelvesDiv.appendChild(wallEl);
-        } else {
-          // Wall on left; shelves in normal order so first shelf (A) is leftmost
-          shelvesDiv.appendChild(wallEl);
-          shelves.forEach(shelf => shelvesDiv.appendChild(makeSlot(shelf)));
-        }
-        subEl.appendChild(shelvesDiv);
-
-        const subObj = { id:subId, isleId, number:num, element:subEl, shelves };
-        pendingIsle.subsections.push(subObj);
-
-        // Clicking a subsection rect goes directly to shelf select
-        subEl.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (drawMode || editMode || isleDragMoved) return;
-          activeIsle       = isles.find(i=>i.id===isleId);
-          activeSubsection = subObj;
-          openShelfSelect(subObj);
-        });
-
-        body.appendChild(subEl);
-      }
-
-      isleEl.appendChild(body);
-      applyIsleFill(isleEl, pendingIsle.fillColor || '#ffffff', pendingIsle.fillOpacity || 0);
-      isles.push(pendingIsle);
-      attachIsleClickHandler(pendingIsle);
-
-      console.log('Isle created:', pendingIsle);
-      countEl.textContent=`Isles: ${isles.length}`;
-      statusEl.textContent=`${pendingIsle.label} added. Draw another or press Esc.`;
-      pendingIsle=null;
-      hide('modal-labels');
-    }
-
-    /* Isle click/drag handler */
-    function attachIsleClickHandler(isle) {
-      isle.element.addEventListener('mousedown', (e) => {
-        if (!editMode || e.button !== 0) return;
+    _attachZoneHandlers(zone) {
+      zone.element.addEventListener('mousedown', (e) => {
+        if (e.button !== 0 || !this._editMode) return;
         e.stopPropagation(); e.preventDefault();
-        selectIsle(isle);
-        selectZone(null);
-        isDraggingIsle = true;
-        draggingIsle   = isle;
-        isleDragMoved  = false;
-        isleStartMX    = e.clientX;
-        isleStartMY    = e.clientY;
-        isleStartX     = isle.position.x;
-        isleStartY     = isle.position.y;
+        this._selectZone(zone); this._selectIsle(null);
+        this._isDragZone = true; this._dragZone = zone;
+        this._zoneDragMoved = false;
+        this._zoneSMX = e.clientX; this._zoneSMY = e.clientY;
+        this._zoneSX = zone.position.x; this._zoneSY = zone.position.y;
       });
-      isle.element.addEventListener('click', () => {
-        if (drawMode || editMode || isleDragMoved) return;
-        activeIsle = isle;
-        if (isle.subsections.length===1) {
-          activeSubsection = isle.subsections[0];
-          openShelfSelect(activeSubsection);
-        } else {
-          openSubsectionSelect(isle);
-        }
+      zone.element.addEventListener('click', (e) => {
+        if (this._editMode) return;
+        e.stopPropagation();
+        this._openZoneActions(zone);
       });
-    }
+    },
 
-    /* ══════════════════════════════════════════
-       SUBSECTION SELECT
-    ══════════════════════════════════════════ */
-    function openSubsectionSelect(isle) {
-      document.getElementById('subsection-select-title').textContent = `${isle.label} — Select a Subsection`;
-      const list = document.getElementById('subsection-select-list');
-      list.innerHTML='';
-      isle.subsections.forEach(sub => {
-        const totalItems = sub.shelves.reduce((n,sh)=>n+sh.items.length,0);
-        const row = document.createElement('div');
-        row.className='select-row';
-        row.innerHTML=`<span class="row-name">Subsection ${sub.number}</span>
-                       <span class="row-meta">${sub.shelves.length} shelves · ${totalItems} items</span>`;
-        row.addEventListener('click', ()=>{ activeSubsection=sub; hide('modal-subsection-select'); openShelfSelect(sub); });
-        list.appendChild(row);
-      });
-      show('modal-subsection-select');
-    }
+    // ── Isle creation step 1 ─────────────────────────────────────────────────
 
-    function backToSubsectionSelect() {
-      hide('modal-shelf-select');
-      if (activeIsle.subsections.length===1) closeAllModals();
-      else openSubsectionSelect(activeIsle);
-    }
-
-    /* ══════════════════════════════════════════
-       SHELF SELECT
-    ══════════════════════════════════════════ */
-    function openShelfSelect(sub) {
-      document.getElementById('shelf-select-title').textContent =
-        `${activeIsle.label} › Sub ${sub.number} — Select a Shelf`;
-      const list = document.getElementById('shelf-select-list');
-      list.innerHTML='';
-      sub.shelves.forEach(shelf => {
-        const row = document.createElement('div');
-        row.className='select-row';
-        row.innerHTML=`<span class="row-name">${shelf.label}</span>
-                       <span class="row-meta">${shelf.items.length} item${shelf.items.length!==1?'s':''}</span>`;
-        row.addEventListener('click', ()=>selectShelf(shelf));
-        list.appendChild(row);
-      });
-      show('modal-shelf-select');
-    }
-
-    function selectShelf(shelf) {
-      activeShelf = shelf;
-      hide('modal-shelf-select');
-      document.getElementById('shelf-actions-title').textContent =
-        `${activeIsle.label} › Sub ${activeSubsection.number} › ${shelf.label}`;
-      document.getElementById('shelf-actions-subtitle').textContent =
-        `${shelf.items.length} item${shelf.items.length!==1?'s':''} on this shelf`;
-      show('modal-shelf-actions');
-    }
-
-    function backToShelfSelect() { hide('modal-shelf-actions'); openShelfSelect(activeSubsection); }
-
-    /* ══════════════════════════════════════════
-       ADD SHELF
-    ══════════════════════════════════════════ */
-    function openAddShelf() {
-      hide('modal-shelf-select');
-      document.getElementById('add-shelf-subtitle').textContent =
-        `${activeIsle.label} › Sub ${activeSubsection.number}`;
-      const inp = document.getElementById('add-shelf-name-input');
-      inp.value = ''; inp.style.borderColor = '';
-      show('modal-add-shelf');
-      inp.focus();
-    }
-
-    function backToShelfSelectFromAdd() {
-      hide('modal-add-shelf');
-      openShelfSelect(activeSubsection);
-    }
-
-    function confirmAddShelf() {
-      const inp = document.getElementById('add-shelf-name-input');
-      const label = inp.value.trim();
-      inp.style.borderColor = '';
-      if (!label) { inp.style.borderColor = '#e53935'; inp.focus(); return; }
-
-      const shelf = {
-        id:           ++shelfCounter,
-        isleId:       activeIsle.id,
-        subsectionId: activeSubsection.id,
-        shelfNumber:  activeSubsection.shelves.length + 1,
-        label,
-        items:        [],
-        element:      null,
-      };
-
-      const slot = document.createElement('div');
-      slot.className = 'shelf-slot';
-      slot.textContent = shelf.label;
-      slot.style.borderColor = activeIsle.shelfColor;
-      shelf.element = slot;
-
-      // Insert respecting facing: left-facing has wall as last child; others have wall as first child
-      const shelvesDiv = activeSubsection.element.querySelector('.sub-shelves');
-      if (activeIsle.facing === 'left') {
-        shelvesDiv.insertBefore(slot, shelvesDiv.lastElementChild);
-      } else {
-        shelvesDiv.appendChild(slot);
-      }
-
-      activeSubsection.shelves.push(shelf);
-      hide('modal-add-shelf');
-      openShelfSelect(activeSubsection);
-    }
-
-    function deleteShelf() {
-      const itemCount = activeShelf.items.length;
-      if (itemCount > 0) {
-        document.getElementById('confirm-delete-msg').textContent =
-          `Shelf "${activeShelf.label}" still has ${itemCount} item(s) on it. Remove all items before deleting.`;
-        document.getElementById('modal-confirm-delete')
-          .querySelector('.btn-danger').style.display = 'none';
-        show('modal-confirm-delete');
-        return;
-      }
-      document.getElementById('confirm-delete-msg').textContent =
-        `Permanently delete shelf "${activeShelf.label}"? This cannot be undone.`;
-      document.getElementById('modal-confirm-delete')
-        .querySelector('.btn-danger').style.display = '';
-      show('modal-confirm-delete');
-    }
-
-    function confirmDeleteShelf() {
-      hide('modal-confirm-delete');
-      activeSubsection.shelves = activeSubsection.shelves.filter(s => s.id !== activeShelf.id);
-      if (activeShelf.element) activeShelf.element.remove();
-      activeShelf = null;
-      hide('modal-shelf-actions');
-      if (activeSubsection.shelves.length === 0) closeAllModals();
-      else openShelfSelect(activeSubsection);
-    }
-
-    /* ══════════════════════════════════════════
-       ADD ITEM
-    ══════════════════════════════════════════ */
-    function openAddItem() {
-      hide('modal-shelf-actions');
-      document.getElementById('add-item-subtitle').textContent =
-        `${activeIsle.label} › Sub ${activeSubsection.number} › ${activeShelf.label}`;
-      ['item-id-input','item-type-input','item-category-input','item-notes-input']
-        .forEach(id=>{ const el=document.getElementById(id); el.value=''; el.style.borderColor=''; });
-      show('modal-add-item');
-      document.getElementById('item-id-input').focus();
-    }
-
-    function backFromAddItem() {
-      hide('modal-add-item');
-      if (activeZoneForItems) {
-        openZoneActions(activeZoneForItems);
-      } else {
-        hide('modal-remove-items');
-        selectedItemIds.clear();
-        selectShelf(activeShelf);
-      }
-    }
-
-    function backToShelfActions() {
-      hide('modal-add-item'); hide('modal-remove-items');
-      selectedItemIds.clear();
-      selectShelf(activeShelf);
-    }
-
-    function confirmAddItem() {
-      const idEl   = document.getElementById('item-id-input');
-      const itemId = idEl.value.trim();
-      idEl.style.borderColor='';
-      if (!itemId) { idEl.style.borderColor='#e53935'; idEl.focus(); return; }
-
-      if (activeZoneForItems) {
-        const item = {
-          id:      ++itemCounter,
-          itemId,
-          type:     document.getElementById('item-type-input').value.trim(),
-          category: document.getElementById('item-category-input').value.trim(),
-          notes:    document.getElementById('item-notes-input').value.trim(),
-          zoneId:  activeZoneForItems.id,
-          addedAt: new Date().toISOString(),
-        };
-        activeZoneForItems.items.push(item);
-        hide('modal-add-item');
-        openZoneActions(activeZoneForItems);
-      } else {
-        const item = {
-          id:           ++itemCounter,
-          itemId,
-          type:         document.getElementById('item-type-input').value.trim(),
-          category:     document.getElementById('item-category-input').value.trim(),
-          notes:        document.getElementById('item-notes-input').value.trim(),
-          shelfId:      activeShelf.id,
-          subsectionId: activeSubsection.id,
-          isleId:       activeIsle.id,
-          addedAt:      new Date().toISOString(),
-        };
-        activeShelf.items.push(item);
-        hide('modal-add-item');
-        selectShelf(activeShelf);
-      }
-    }
-
-    /* ══════════════════════════════════════════
-       ZONE ITEM MANAGEMENT
-    ══════════════════════════════════════════ */
-    function openZoneActions(zone) {
-      activeZoneForItems = zone;
-      document.getElementById('zone-actions-title').textContent = `Zone: ${escHtml(zone.label)}`;
-      const n = zone.items.length;
-      document.getElementById('zone-actions-subtitle').textContent =
-        `${n} item${n !== 1 ? 's' : ''} in this zone`;
-      show('modal-zone-actions');
-    }
-
-    function openAddZoneItem() {
-      hide('modal-zone-actions');
-      document.getElementById('add-item-subtitle').textContent =
-        `Zone: ${escHtml(activeZoneForItems.label)}`;
-      ['item-id-input','item-type-input','item-category-input','item-notes-input']
-        .forEach(id => { const el = document.getElementById(id); el.value = ''; el.style.borderColor = ''; });
-      show('modal-add-item');
-      document.getElementById('item-id-input').focus();
-    }
-
-    function backToZoneActions() {
-      hide('modal-zone-items');
-      selectedZoneItemIds.clear();
-      if (activeZoneForItems) openZoneActions(activeZoneForItems);
-    }
-
-    function openZoneItemList() {
-      hide('modal-zone-actions');
-      selectedZoneItemIds.clear();
-      renderZoneItemList();
-      document.getElementById('zone-items-title').textContent =
-        `Zone: ${escHtml(activeZoneForItems.label)}`;
-      updateZoneSelectedCount();
-      show('modal-zone-items');
-    }
-
-    function renderZoneItemList() {
-      const list = document.getElementById('zone-item-list');
-      list.innerHTML = '';
-      if (!activeZoneForItems || activeZoneForItems.items.length === 0) {
-        list.innerHTML = '<p class="no-items-msg">No items in this zone.</p>';
-        return;
-      }
-      activeZoneForItems.items.forEach(item => {
-        const row = document.createElement('div');
-        row.className = 'item-row' + (selectedZoneItemIds.has(item.id) ? ' selected' : '');
-        row.dataset.itemId = item.id;
-        row.innerHTML = `
-          <span class="item-id-label">${escHtml(item.itemId)}</span>
-          <span class="item-meta">${[item.type, item.category].filter(Boolean).map(escHtml).join(' · ')}</span>
-          ${item.notes ? `<span class="item-meta" style="font-style:italic">${escHtml(item.notes)}</span>` : ''}`;
-        row.addEventListener('click', (e) => toggleZoneItemSelection(item.id, e.ctrlKey || e.metaKey));
-        list.appendChild(row);
-      });
-    }
-
-    function toggleZoneItemSelection(itemId, multi) {
-      if (!multi) {
-        if (selectedZoneItemIds.size === 1 && selectedZoneItemIds.has(itemId)) selectedZoneItemIds.clear();
-        else { selectedZoneItemIds.clear(); selectedZoneItemIds.add(itemId); }
-      } else {
-        if (selectedZoneItemIds.has(itemId)) selectedZoneItemIds.delete(itemId);
-        else selectedZoneItemIds.add(itemId);
-      }
-      renderZoneItemList(); updateZoneSelectedCount();
-    }
-
-    function updateZoneSelectedCount() {
-      const n = selectedZoneItemIds.size;
-      document.getElementById('zone-selected-count').textContent = `${n} selected`;
-      document.getElementById('btn-zone-remove-confirm').disabled = (n === 0);
-    }
-
-    function confirmRemoveZoneItems() {
-      if (selectedZoneItemIds.size === 0) return;
-      activeZoneForItems.items = activeZoneForItems.items.filter(i => !selectedZoneItemIds.has(i.id));
-      selectedZoneItemIds.clear();
-      hide('modal-zone-items');
-      openZoneActions(activeZoneForItems);
-    }
-
-    /* ══════════════════════════════════════════
-       REMOVE ITEMS
-    ══════════════════════════════════════════ */
-    function openRemoveItems() {
-      hide('modal-shelf-actions');
-      selectedItemIds.clear();
-      renderItemList();
-      document.getElementById('remove-items-title').textContent =
-        `${activeIsle.label} › Sub ${activeSubsection.number} › ${activeShelf.label}`;
-      updateSelectedCount();
-      show('modal-remove-items');
-    }
-
-    function renderItemList() {
-      const list = document.getElementById('item-list');
-      list.innerHTML='';
-      if (activeShelf.items.length===0) {
-        list.innerHTML='<p class="no-items-msg">No items on this shelf.</p>'; return;
-      }
-      activeShelf.items.forEach(item => {
-        const row = document.createElement('div');
-        row.className='item-row'+(selectedItemIds.has(item.id)?' selected':'');
-        row.dataset.itemId=item.id;
-        row.innerHTML=`
-          <span class="item-id-label">${item.itemId}</span>
-          <span class="item-meta">${[item.type,item.category].filter(Boolean).join(' · ')}</span>
-          ${item.notes?`<span class="item-meta" style="font-style:italic">${item.notes}</span>`:''}`;
-        row.addEventListener('click',(e)=>toggleItemSelection(item.id,e.ctrlKey||e.metaKey));
-        list.appendChild(row);
-      });
-    }
-
-    function toggleItemSelection(itemId, multi) {
-      if (!multi) {
-        if (selectedItemIds.size===1&&selectedItemIds.has(itemId)) selectedItemIds.clear();
-        else { selectedItemIds.clear(); selectedItemIds.add(itemId); }
-      } else {
-        if (selectedItemIds.has(itemId)) selectedItemIds.delete(itemId);
-        else selectedItemIds.add(itemId);
-      }
-      renderItemList(); updateSelectedCount();
-    }
-
-    function updateSelectedCount() {
-      const n=selectedItemIds.size;
-      document.getElementById('selected-count').textContent=`${n} selected`;
-      document.getElementById('btn-remove-confirm').disabled=(n===0);
-    }
-
-    function confirmRemoveItems() {
-      if (selectedItemIds.size===0) return;
-      activeShelf.items=activeShelf.items.filter(i=>!selectedItemIds.has(i.id));
-      selectedItemIds.clear();
-      hide('modal-remove-items');
-      selectShelf(activeShelf);
-    }
-
-    /* ══════════════════════════════════════════
-       SEARCH
-    ══════════════════════════════════════════ */
-    function onSearchInput() {
-      if (!document.getElementById('search-input').value.trim()) clearSearch();
-    }
-
-    function runSearch() {
-      const query = document.getElementById('search-input').value.trim();
-      if (!query) return;
-      clearHighlights();
-
-      const q = query.toLowerCase();
-      const matches=[];
-      for (const isle of isles)
-        for (const sub of isle.subsections)
-          for (const shelf of sub.shelves)
-            for (const item of shelf.items)
-              if (item.itemId.toLowerCase().includes(q))
-                matches.push({type:'isle',isle,sub,shelf,item});
-
-      const zoneMatches=[];
-      for (const zone of zones)
-        for (const item of zone.items)
-          if (item.itemId.toLowerCase().includes(q))
-            zoneMatches.push({type:'zone',zone,item});
-
-      const resultsEl = document.getElementById('search-results');
-      const clearBtn  = document.getElementById('btn-clear');
-      resultsEl.innerHTML=''; resultsEl.classList.remove('hidden'); clearBtn.style.display='';
-
-      if (matches.length===0 && zoneMatches.length===0) {
-        resultsEl.innerHTML=`<div class="search-result-card not-found">No item found matching "<strong>${escHtml(query)}</strong>"</div>`;
-        return;
-      }
-
-      // Highlight isle/sub/shelf
-      const seenIsles=new Set(), seenSubs=new Set(), seenShelves=new Set();
-      matches.forEach(({isle,sub,shelf})=>{
-        if (!seenIsles.has(isle.id))   { isle.element.classList.add('isle-highlight');   seenIsles.add(isle.id); }
-        if (!seenSubs.has(sub.id))     { sub.element.classList.add('sub-highlight');      seenSubs.add(sub.id); }
-        if (shelf.element && !seenShelves.has(shelf.id)) { shelf.element.classList.add('shelf-highlight'); seenShelves.add(shelf.id); }
-      });
-
-      // Highlight zones
-      const seenZones=new Set();
-      zoneMatches.forEach(({zone})=>{
-        if (!seenZones.has(zone.id)) { zone.element.classList.add('zone-highlight'); seenZones.add(zone.id); }
-      });
-
-      // Render isle result cards
-      matches.forEach(({isle,sub,shelf,item})=>{
-        const card=document.createElement('div');
-        card.className='search-result-card';
-        const parts=[
-          `<span class="lbl">I:</span>${escHtml(isle.label)}`,
-          `<span class="sep">|</span><span class="lbl">SUB:</span>${sub.number}`,
-          `<span class="sep">|</span><span class="lbl">SH:</span>${escHtml(shelf.label)}`,
-          `<span class="sep">|</span><span class="lbl">ID:</span>${escHtml(item.itemId)}`,
-          item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${escHtml(item.type)}`       : '',
-          item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${escHtml(item.category)}` : '',
-        ].filter(Boolean).join('');
-        card.innerHTML=`<div class="result-line">${parts}</div>`;
-        card.style.cursor='pointer';
-        card.addEventListener('click',()=>isle.element.scrollIntoView({behavior:'smooth',block:'nearest'}));
-        resultsEl.appendChild(card);
-      });
-
-      // Render zone result cards
-      zoneMatches.forEach(({zone,item})=>{
-        const card=document.createElement('div');
-        card.className='search-result-card';
-        card.style.borderLeftColor='#8b5cf6';
-        const parts=[
-          `<span class="lbl">Z:</span>${escHtml(zone.label)}`,
-          `<span class="sep">|</span><span class="lbl">ID:</span>${escHtml(item.itemId)}`,
-          item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${escHtml(item.type)}`       : '',
-          item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${escHtml(item.category)}` : '',
-        ].filter(Boolean).join('');
-        card.innerHTML=`<div class="result-line">${parts}</div>`;
-        card.style.cursor='pointer';
-        card.addEventListener('click',()=>zone.element.scrollIntoView({behavior:'smooth',block:'nearest'}));
-        resultsEl.appendChild(card);
-      });
-    }
-
-    function clearSearch() {
-      document.getElementById('search-input').value='';
-      document.getElementById('search-results').classList.add('hidden');
-      document.getElementById('search-results').innerHTML='';
-      document.getElementById('btn-clear').style.display='none';
-      clearHighlights();
-    }
-
-    function clearHighlights() {
-      document.querySelectorAll('.isle-highlight') .forEach(el=>el.classList.remove('isle-highlight'));
-      document.querySelectorAll('.sub-highlight')  .forEach(el=>el.classList.remove('sub-highlight'));
-      document.querySelectorAll('.shelf-highlight').forEach(el=>el.classList.remove('shelf-highlight'));
-      document.querySelectorAll('.zone-highlight') .forEach(el=>el.classList.remove('zone-highlight'));
-    }
-
-    /* ══════════════════════════════════════════
-       COPY / PASTE ISLE
-    ══════════════════════════════════════════ */
-    function copySelectedIsle() {
-      if (!selectedIsle) return;
-      // Snapshot all data needed to reconstruct — items excluded intentionally
-      copiedIsle = {
-        row:             selectedIsle.row || '',
-        color:           selectedIsle.color,
-        shelfColor:      selectedIsle.shelfColor,
-        fillColor:       selectedIsle.fillColor   || '#ffffff',
-        fillOpacity:     selectedIsle.fillOpacity != null ? selectedIsle.fillOpacity : 0,
-        labelColor:      selectedIsle.labelColor  || selectedIsle.color,
-        rotation:        selectedIsle.rotation    || 0,
-        facing:          selectedIsle.facing,
-        dimensions:      { ...selectedIsle.dimensions },
-        shelfLabels:     [...selectedIsle.shelfLabels],
-        subsectionStart: selectedIsle.subsectionStart,
-        subsectionCount: selectedIsle.subsectionCount,
-        position:        { ...selectedIsle.position },
-        subsections:     selectedIsle.subsections.map(sub => ({
-          number: sub.number,
-          shelves: sub.shelves.map(sh => ({
-            shelfNumber: sh.shelfNumber,
-            label:       sh.label,
-          })),
-        })),
-        sourceLabel: selectedIsle.label,
-      };
-      statusEl.textContent = `Copied "${selectedIsle.label}". Press Ctrl+V to paste.`;
-    }
-
-    function openPasteModal() {
-      if (!copiedIsle) return;
-      const inp = document.getElementById('paste-isle-name');
-      inp.value = copiedIsle.sourceLabel + ' (copy)';
-      inp.style.borderColor = '';
-      document.getElementById('paste-isle-subtitle').textContent =
-        `Copying "${copiedIsle.sourceLabel}" — structure, colors, and facing. Items will not be copied.`;
-      show('modal-paste-isle');
-      inp.focus(); inp.select();
-    }
-
-    function cancelPaste() { hide('modal-paste-isle'); }
-
-    function pasteIsle() {
-      const nameEl = document.getElementById('paste-isle-name');
-      const name   = nameEl.value.trim();
-      if (!name) { nameEl.style.borderColor = '#e53935'; nameEl.focus(); return; }
-      nameEl.style.borderColor = '';
-
-      const src = copiedIsle;
-      const id  = ++isleCounter;
-      const x   = Math.min(src.position.x + 30, Math.max(0, warehouse.clientWidth  - src.dimensions.width));
-      const y   = Math.min(src.position.y + 30, Math.max(0, warehouse.clientHeight - src.dimensions.height));
-
+    _beginIsleCreation(x, y, w, h) {
+      const color = this._rndHex();
+      const id = ++this._isleCounter;
       const el = document.createElement('div');
       el.className = 'isle';
-      Object.assign(el.style, {
-        left: `${x}px`, top: `${y}px`,
-        width: `${src.dimensions.width}px`, height: `${src.dimensions.height}px`,
-        borderColor: src.color,
-        transform: `rotate(${src.rotation}deg)`,
-      });
+      Object.assign(el.style, { left:`${x}px`, top:`${y}px`, width:`${w}px`, height:`${h}px`, borderColor:color });
       el.dataset.isleId = id;
-      el.innerHTML = `<div class="isle-header">${buildIsleHeaderHtml(src.row || '', name, src.labelColor)}</div>`;
+      el.innerHTML = `<div class="isle-header"><span class="isle-label" style="color:${color}">…</span></div>`;
+      this._wh.appendChild(el);
+      this._pi = { id, label:'', row:'', color, shelfColor:'#aaaaaa',
+                   fillColor:'#ffffff', fillOpacity:0, labelColor:color, rotation:0,
+                   position:{x,y}, dimensions:{width:w,height:h}, element:el,
+                   shelfCount:1, shelfLabels:[], subsectionStart:1, subsectionCount:1,
+                   facing:'right', subsections:[], createdAt: new Date().toISOString() };
+      this.f_isleRow = ''; this.f_isleName = '';
+      this.f_shelfCount = 1; this.f_isleColor = color;
+      this.f_isleLabelColor = color; this.f_shelfColor = '#aaaaaa';
+      this.f_isleFillColor  = '#ffffff'; this.f_isleFillOpacity = 0;
+      this.f_isleFacing = 'right';
+      this.isleNameError = false;
+      this.m_count = true;
+      this.$nextTick(() => this.$refs.isleNameInput?.focus());
+    },
+
+    confirmStep1() {
+      const name = this.f_isleName.trim();
+      if (!name) { this.isleNameError = true; return; }
+      this.isleNameError = false;
+      this._pi.label      = name;
+      this._pi.row        = this.f_isleRow.trim();
+      this._pi.shelfCount = Math.min(Math.max(this.f_shelfCount || 1, 1), 26);
+      this._pi.facing     = this.f_isleFacing;
+      this._pi.shelfColor  = this.f_shelfColor;
+      this._pi.fillColor   = this.f_isleFillColor;
+      this._pi.fillOpacity = this.f_isleFillOpacity;
+      this._pi.labelColor  = this.f_isleLabelColor;
+      const hdr = this._pi.element.querySelector('.isle-header');
+      if (hdr) hdr.innerHTML = this._isleHeaderHtml(this._pi.row, name, this._pi.labelColor);
+      this.mc_subConfigTitle = `Subsection Setup — ${name}`;
+      this.f_subStart = 1; this.f_subCount = 1;
+      this.m_count = false; this.m_subs = true;
+    },
+    goBackToStep1() { this.m_subs = false; this.m_count = true; },
+
+    // ── Isle creation step 2 ─────────────────────────────────────────────────
+
+    confirmStep2() {
+      this._pi.subsectionStart = Math.max(this.f_subStart || 1, 1);
+      this._pi.subsectionCount = Math.max(this.f_subCount || 1, 1);
+      this.f_shelfLabelsList = [];
+      for (let i = 1; i <= this._pi.shelfCount; i++) {
+        this.f_shelfLabelsList.push({ label: String.fromCharCode(64 + i) });
+      }
+      this.mc_labelsTitle = `Label Shelves — ${this._pi.label}`;
+      this.m_subs = false; this.m_labels = true;
+    },
+    goBackToStep2() { this.m_labels = false; this.m_subs = true; },
+
+    cancelIsleCreation() {
+      if (this._pi) { this._pi.element.remove(); this._pi = null; this._isleCounter--; }
+      this.m_count = false; this.m_subs = false; this.m_labels = false;
+    },
+
+    // ── Isle creation step 3 ─────────────────────────────────────────────────
+
+    confirmStep3() {
+      const shelfLabels = this.f_shelfLabelsList.map((s, i) => s.label.trim() || String.fromCharCode(65 + i));
+      this._pi.shelfLabels = shelfLabels;
+      const { subsectionStart, subsectionCount, element: isleEl, id: isleId, facing, shelfColor } = this._pi;
 
       const body = document.createElement('div');
       body.className = 'isle-body';
 
-      const isle = {
-        id, label: name, row: src.row || '',
-        color: src.color, shelfColor: src.shelfColor,
-        fillColor: src.fillColor, fillOpacity: src.fillOpacity,
-        labelColor: src.labelColor, rotation: src.rotation,
-        facing: src.facing,
-        position: { x, y }, dimensions: { ...src.dimensions },
-        element: el,
-        shelfCount: src.shelfLabels.length, shelfLabels: [...src.shelfLabels],
-        subsectionStart: src.subsectionStart, subsectionCount: src.subsectionCount,
-        subsections: [], createdAt: new Date().toISOString(),
-      };
-
-      src.subsections.forEach(srcSub => {
-        const subId  = ++subsectionCounter;
-        const subEl  = document.createElement('div');
-        subEl.className = `subsection facing-${src.facing}`;
-        subEl.dataset.subsectionNum = srcSub.number;
-
-        const subNumEl = document.createElement('div');
-        subNumEl.className = 'sub-number';
-        subNumEl.textContent = srcSub.number;
-        subEl.appendChild(subNumEl);
+      for (let s = 0; s < subsectionCount; s++) {
+        const num   = subsectionStart + s;
+        const subEl = document.createElement('div');
+        subEl.className = `subsection facing-${facing}`;
+        subEl.dataset.subsectionNum = num;
+        const numEl = document.createElement('div');
+        numEl.className = 'sub-number'; numEl.textContent = num;
+        subEl.appendChild(numEl);
 
         const shelvesDiv = document.createElement('div');
         shelvesDiv.className = 'sub-shelves';
         const wallEl = document.createElement('div');
         wallEl.className = 'wall-indicator';
 
-        const shelves = srcSub.shelves.map(srcSh => ({
-          id: ++shelfCounter, isleId: id, subsectionId: subId,
-          shelfNumber: srcSh.shelfNumber, label: srcSh.label,
-          items: [], element: null,
+        const subId = ++this._subsectionCounter;
+        const shelves = shelfLabels.map((lbl, j) => ({
+          id: ++this._shelfCounter, isleId, subsectionId: subId,
+          shelfNumber: j+1, label: lbl, items: [], element: null,
         }));
 
         const makeSlot = (shelf) => {
           const slot = document.createElement('div');
-          slot.className = 'shelf-slot';
-          slot.textContent = shelf.label;
-          slot.style.borderColor = src.shelfColor;
-          shelf.element = slot;
-          return slot;
+          slot.className = 'shelf-slot'; slot.textContent = shelf.label;
+          slot.style.borderColor = shelfColor; shelf.element = slot; return slot;
         };
 
-        if (src.facing === 'left') {
+        if (facing === 'left') {
           [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh)));
           shelvesDiv.appendChild(wallEl);
         } else {
@@ -1571,481 +977,882 @@
         }
         subEl.appendChild(shelvesDiv);
 
-        const subObj = { id: subId, isleId: id, number: srcSub.number, element: subEl, shelves };
-        isle.subsections.push(subObj);
+        const subObj = { id: subId, isleId, number: num, element: subEl, shelves };
+        this._pi.subsections.push(subObj);
 
-        subEl.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          if (drawMode || editMode || isleDragMoved) return;
-          activeIsle       = isles.find(i => i.id === id);
-          activeSubsection = subObj;
-          openShelfSelect(subObj);
+        subEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (this._drawMode || this._editMode || this._isleDragMoved) return;
+          this._ai   = this._isles.find(i => i.id === isleId);
+          this._asub = subObj;
+          this._openShelfSelect(subObj);
         });
 
+        body.appendChild(subEl);
+      }
+
+      isleEl.appendChild(body);
+      this._applyIsleFill(isleEl, this._pi.fillColor, this._pi.fillOpacity);
+      this._isles.push(this._pi);
+      this._attachIsleHandlers(this._pi);
+      this.isleCountText = `Isles: ${this._isles.length}`;
+      this.statusText = `${this._pi.label} added.`;
+      this._pi = null; this.m_labels = false;
+      this._saveLayout();
+    },
+
+    _attachIsleHandlers(isle) {
+      isle.element.addEventListener('mousedown', (e) => {
+        if (!this._editMode || e.button !== 0) return;
+        e.stopPropagation(); e.preventDefault();
+        this._selectIsle(isle); this._selectZone(null);
+        this._isDragIsle = true; this._dragIsle = isle;
+        this._isleDragMoved = false;
+        this._isleSMX = e.clientX; this._isleSMY = e.clientY;
+        this._isleSX  = isle.position.x; this._isleSY  = isle.position.y;
+      });
+      isle.element.addEventListener('click', () => {
+        if (this._drawMode || this._editMode || this._isleDragMoved) return;
+        this._ai = isle;
+        if (isle.subsections.length === 1) {
+          this._asub = isle.subsections[0];
+          this._openShelfSelect(this._asub);
+        } else {
+          this._openSubsectionSelect(isle);
+        }
+      });
+    },
+
+    // ── Subsection / Shelf select ─────────────────────────────────────────────
+
+    _openSubsectionSelect(isle) {
+      this.mc_subSelTitle = `${isle.label} — Select a Subsection`;
+      this.mc_subSelList  = isle.subsections.map(sub => ({
+        ...sub,
+        totalItems: sub.shelves.reduce((n, sh) => n + sh.items.length, 0),
+      }));
+      this.m_subSel = true;
+    },
+
+    selectSubsectionFromList(sub) {
+      this._asub = sub;
+      this.m_subSel = false;
+      this._openShelfSelect(sub);
+    },
+
+    backToSubsectionSelect() {
+      this.m_shelfSel = false;
+      if (this._ai && this._ai.subsections.length === 1) this.closeAllModals();
+      else if (this._ai) this._openSubsectionSelect(this._ai);
+    },
+
+    _openShelfSelect(sub) {
+      this.mc_shelfSelTitle = `${this._ai.label} › Sub ${sub.number} — Select a Shelf`;
+      this.mc_shelfSelList  = sub.shelves;
+      this.m_shelfSel = true;
+    },
+
+    selectShelfFromList(shelf) {
+      this._ash = shelf;
+      this.m_shelfSel = false;
+      this.mc_shelfActTitle = `${this._ai.label} › Sub ${this._asub.number} › ${shelf.label}`;
+      this.mc_shelfActSub   = `${shelf.items.length} item${shelf.items.length !== 1 ? 's' : ''} on this shelf`;
+      this.m_shelfAct = true;
+    },
+
+    backToShelfSelect() { this.m_shelfAct = false; this._openShelfSelect(this._asub); },
+
+    // ── Add shelf ────────────────────────────────────────────────────────────
+
+    openAddShelf() {
+      this.m_shelfSel = false;
+      this.mc_addShelfSub = `${this._ai.label} › Sub ${this._asub.number}`;
+      this.f_addShelfName = ''; this.addShelfNameError = false;
+      this.m_addShelf = true;
+      this.$nextTick(() => this.$refs.addShelfInput?.focus());
+    },
+    backToShelfSelectFromAdd() { this.m_addShelf = false; this._openShelfSelect(this._asub); },
+
+    confirmAddShelf() {
+      const label = this.f_addShelfName.trim();
+      if (!label) { this.addShelfNameError = true; return; }
+      this.addShelfNameError = false;
+      const shelf = {
+        id: ++this._shelfCounter, isleId: this._ai.id, subsectionId: this._asub.id,
+        shelfNumber: this._asub.shelves.length + 1, label, items: [], element: null,
+      };
+      const slot = document.createElement('div');
+      slot.className = 'shelf-slot'; slot.textContent = label;
+      slot.style.borderColor = this._ai.shelfColor; shelf.element = slot;
+      const shelvesDiv = this._asub.element.querySelector('.sub-shelves');
+      if (this._ai.facing === 'left') shelvesDiv.insertBefore(slot, shelvesDiv.lastElementChild);
+      else shelvesDiv.appendChild(slot);
+      this._asub.shelves.push(shelf);
+      this.m_addShelf = false;
+      this._openShelfSelect(this._asub);
+      this._saveLayout();
+    },
+
+    deleteShelf() {
+      const n = this._ash.items.length;
+      if (n > 0) {
+        this.mc_confDelMsg = `Shelf "${this._ash.label}" still has ${n} item(s). Remove all items before deleting.`;
+        this.mc_showDelBtn = false;
+      } else {
+        this.mc_confDelMsg = `Permanently delete shelf "${this._ash.label}"? This cannot be undone.`;
+        this.mc_showDelBtn = true;
+      }
+      this.m_confDel = true;
+    },
+
+    confirmDeleteShelf() {
+      this.m_confDel = false;
+      this._asub.shelves = this._asub.shelves.filter(s => s.id !== this._ash.id);
+      if (this._ash.element) this._ash.element.remove();
+      this._ash = null; this.m_shelfAct = false;
+      if (this._asub.shelves.length === 0) this.closeAllModals();
+      else this._openShelfSelect(this._asub);
+      this._saveLayout();
+    },
+
+    // ── Add item ─────────────────────────────────────────────────────────────
+
+    openAddItem() {
+      this.m_shelfAct = false;
+      this.mc_addItemSub = `${this._ai.label} › Sub ${this._asub.number} › ${this._ash.label}`;
+      this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = ''; this.f_itemNotes = '';
+      this.itemIdError = false;
+      this.m_addItem = true;
+      this.$nextTick(() => this.$refs.itemIdInput?.focus());
+    },
+
+    backFromAddItem() {
+      this.m_addItem = false;
+      if (this._azfi) this._openZoneActions(this._azfi);
+      else { this._selItemIds.clear(); this.mc_selItemIds = []; this.selectShelfFromList(this._ash); }
+    },
+
+    backToShelfActions() {
+      this.m_addItem = false; this.m_rmItems = false;
+      this._selItemIds.clear(); this.mc_selItemIds = []; this.mc_selCount = 0;
+      this.selectShelfFromList(this._ash);
+    },
+
+    async confirmAddItem() {
+      const itemId = this.f_itemId.trim();
+      if (!itemId) { this.itemIdError = true; return; }
+      this.itemIdError = false;
+      const now = new Date().toISOString();
+
+      if (this._azfi) {
+        // Zone item
+        const payload = {
+          item_id: itemId, item_type: this.f_itemType.trim(),
+          category: this.f_itemCategory.trim(), notes: this.f_itemNotes.trim(),
+          added_at: now, location_type: 'zone',
+          warehouse_id: this._warehouses[this._activeWhIdx]?.id,
+          warehouse_name: this._warehouses[this._activeWhIdx]?.name || '',
+          zone_id: this._azfi.id, zone_label: this._azfi.label,
+        };
+        const dbId = await this._addItemToDB(payload);
+        this._azfi.items.push({
+          id: dbId, itemId, type: payload.item_type, category: payload.category,
+          notes: payload.notes, addedAt: now, zoneId: this._azfi.id,
+        });
+        this.m_addItem = false;
+        this._openZoneActions(this._azfi);
+      } else {
+        // Shelf item
+        const wh = this._warehouses[this._activeWhIdx];
+        const payload = {
+          item_id: itemId, item_type: this.f_itemType.trim(),
+          category: this.f_itemCategory.trim(), notes: this.f_itemNotes.trim(),
+          added_at: now, location_type: 'shelf',
+          warehouse_id: wh?.id, warehouse_name: wh?.name || '',
+          isle_id: this._ai.id, isle_label: this._ai.label, isle_row: this._ai.row || '',
+          subsection_id: this._asub.id, subsection_number: this._asub.number,
+          shelf_id: this._ash.id, shelf_label: this._ash.label,
+        };
+        const dbId = await this._addItemToDB(payload);
+        this._ash.items.push({
+          id: dbId, itemId, type: payload.item_type, category: payload.category,
+          notes: payload.notes, addedAt: now,
+          shelfId: this._ash.id, subsectionId: this._asub.id, isleId: this._ai.id,
+        });
+        this.m_addItem = false;
+        this.selectShelfFromList(this._ash);
+      }
+    },
+
+    // ── Remove items ──────────────────────────────────────────────────────────
+
+    openRemoveItems() {
+      this.m_shelfAct = false;
+      this._selItemIds.clear(); this.mc_selItemIds = []; this.mc_selCount = 0;
+      this.mc_rmItemsTitle = `${this._ai.label} › Sub ${this._asub.number} › ${this._ash.label}`;
+      this.mc_itemList = this._ash.items;
+      this.m_rmItems = true;
+    },
+
+    toggleItemSel(id, multi) {
+      if (!multi) {
+        if (this._selItemIds.size === 1 && this._selItemIds.has(id)) this._selItemIds.clear();
+        else { this._selItemIds.clear(); this._selItemIds.add(id); }
+      } else {
+        if (this._selItemIds.has(id)) this._selItemIds.delete(id);
+        else this._selItemIds.add(id);
+      }
+      this.mc_selItemIds = [...this._selItemIds];
+      this.mc_selCount   = this._selItemIds.size;
+    },
+
+    async confirmRemoveItems() {
+      if (!this._selItemIds.size) return;
+      const toDelete = this._ash.items.filter(i => this._selItemIds.has(i.id));
+      await Promise.all(toDelete.map(i => this._removeItemFromDB(i.id)));
+      this._ash.items = this._ash.items.filter(i => !this._selItemIds.has(i.id));
+      this._selItemIds.clear(); this.mc_selItemIds = []; this.mc_selCount = 0;
+      this.m_rmItems = false;
+      this.selectShelfFromList(this._ash);
+    },
+
+    // ── Zone actions / items ──────────────────────────────────────────────────
+
+    _openZoneActions(zone) {
+      this._azfi = zone;
+      this.mc_zoneActTitle = `Zone: ${zone.label}`;
+      const n = zone.items.length;
+      this.mc_zoneActSub = `${n} item${n !== 1 ? 's' : ''} in this zone`;
+      this.m_zoneAct = true;
+    },
+
+    openAddZoneItem() {
+      this.m_zoneAct = false;
+      this.mc_addItemSub = `Zone: ${this._azfi.label}`;
+      this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = ''; this.f_itemNotes = '';
+      this.itemIdError = false;
+      this.m_addItem = true;
+      this.$nextTick(() => this.$refs.itemIdInput?.focus());
+    },
+
+    openZoneItemList() {
+      this.m_zoneAct = false;
+      this._selZoneItemIds.clear(); this.mc_selZoneItemIds = []; this.mc_zoneSelCount = 0;
+      this.mc_zoneItemsTitle = `Zone: ${this._azfi.label}`;
+      this.mc_zoneItemList   = this._azfi.items;
+      this.m_zoneItems = true;
+    },
+
+    backToZoneActions() {
+      this.m_zoneItems = false;
+      this._selZoneItemIds.clear(); this.mc_selZoneItemIds = []; this.mc_zoneSelCount = 0;
+      if (this._azfi) this._openZoneActions(this._azfi);
+    },
+
+    toggleZoneItemSel(id, multi) {
+      if (!multi) {
+        if (this._selZoneItemIds.size === 1 && this._selZoneItemIds.has(id)) this._selZoneItemIds.clear();
+        else { this._selZoneItemIds.clear(); this._selZoneItemIds.add(id); }
+      } else {
+        if (this._selZoneItemIds.has(id)) this._selZoneItemIds.delete(id);
+        else this._selZoneItemIds.add(id);
+      }
+      this.mc_selZoneItemIds = [...this._selZoneItemIds];
+      this.mc_zoneSelCount   = this._selZoneItemIds.size;
+    },
+
+    async confirmRemoveZoneItems() {
+      if (!this._selZoneItemIds.size) return;
+      const toDelete = this._azfi.items.filter(i => this._selZoneItemIds.has(i.id));
+      await Promise.all(toDelete.map(i => this._removeItemFromDB(i.id)));
+      this._azfi.items = this._azfi.items.filter(i => !this._selZoneItemIds.has(i.id));
+      this._selZoneItemIds.clear(); this.mc_selZoneItemIds = []; this.mc_zoneSelCount = 0;
+      this.m_zoneItems = false;
+      this._openZoneActions(this._azfi);
+    },
+
+    // ── Delete entity ─────────────────────────────────────────────────────────
+
+    deleteSelectedEntity() {
+      if (!this._editMode) return;
+      const entity = this._selIsle || this._selZone;
+      const type   = this._selIsle ? 'isle' : this._selZone ? 'zone' : null;
+      if (!entity) return;
+      this._pendDelEnt = { entity, type };
+      if (type === 'isle') {
+        const total = entity.subsections.reduce((n, s) => n + s.shelves.reduce((m, sh) => m + sh.items.length, 0), 0);
+        this.mc_delEntTitle = `Delete Isle "${entity.label}"?`;
+        this.mc_delEntMsg   = total > 0
+          ? `This isle contains ${total} item(s). They will all be permanently removed.`
+          : `Isle "${entity.label}" will be permanently removed.`;
+      } else {
+        const n = entity.items?.length || 0;
+        this.mc_delEntTitle = `Delete Zone "${entity.label}"?`;
+        this.mc_delEntMsg   = n > 0
+          ? `This zone contains ${n} item(s). They will all be permanently removed.`
+          : `Zone "${entity.label}" will be permanently removed.`;
+      }
+      this.m_delEnt = true;
+    },
+
+    async confirmDeleteEntity() {
+      this.m_delEnt = false;
+      if (!this._pendDelEnt) return;
+      const { entity, type } = this._pendDelEnt;
+      this._pendDelEnt = null;
+
+      // Delete items from DB
+      if (type === 'isle') {
+        for (const sub of entity.subsections)
+          for (const shelf of sub.shelves)
+            for (const item of shelf.items)
+              await this._removeItemFromDB(item.id);
+      } else {
+        for (const item of (entity.items || []))
+          await this._removeItemFromDB(item.id);
+      }
+
+      this._wh.querySelectorAll(`.edit-handle[data-type="${type}"][data-id="${entity.id}"]`).forEach(el => el.remove());
+      entity.element.remove();
+
+      if (type === 'isle') {
+        const idx = this._isles.indexOf(entity);
+        if (idx !== -1) this._isles.splice(idx, 1);
+        if (this._selIsle === entity) this._selectIsle(null);
+        this.isleCountText = `Isles: ${this._isles.length}`;
+        this.statusText    = `Isle "${entity.label}" deleted.`;
+      } else {
+        const idx = this._zones.indexOf(entity);
+        if (idx !== -1) this._zones.splice(idx, 1);
+        if (this._selZone === entity) this._selectZone(null);
+        this.statusText = `Zone "${entity.label}" deleted.`;
+      }
+      this._saveLayout();
+    },
+
+    // ── Copy / Paste isle ─────────────────────────────────────────────────────
+
+    _copyIsle() {
+      if (!this._selIsle) return;
+      const isle = this._selIsle;
+      this._copiedIsle = {
+        row: isle.row || '', color: isle.color, shelfColor: isle.shelfColor,
+        fillColor: isle.fillColor || '#ffffff', fillOpacity: isle.fillOpacity ?? 0,
+        labelColor: isle.labelColor || isle.color, rotation: isle.rotation || 0,
+        facing: isle.facing, dimensions: { ...isle.dimensions },
+        shelfLabels: [...isle.shelfLabels],
+        subsectionStart: isle.subsectionStart, subsectionCount: isle.subsectionCount,
+        position: { ...isle.position },
+        subsections: isle.subsections.map(sub => ({
+          number: sub.number,
+          shelves: sub.shelves.map(sh => ({ shelfNumber: sh.shelfNumber, label: sh.label })),
+        })),
+        sourceLabel: isle.label,
+      };
+      this.statusText = `Copied "${isle.label}". Press Ctrl+V to paste.`;
+    },
+
+    _openPasteModal() {
+      if (!this._copiedIsle) return;
+      this.f_pasteIsleName    = this._copiedIsle.sourceLabel + ' (copy)';
+      this.mc_pasteIsleSub    = `Copying "${this._copiedIsle.sourceLabel}" — structure, colors, and facing. Items will not be copied.`;
+      this.pasteIsleNameError = false;
+      this.m_pasteIsle = true;
+      this.$nextTick(() => { const el = this.$refs.pasteIsleInput; el?.focus(); el?.select(); });
+    },
+
+    pasteIsle() {
+      const name = this.f_pasteIsleName.trim();
+      if (!name) { this.pasteIsleNameError = true; return; }
+      this.pasteIsleNameError = false;
+      const src = this._copiedIsle;
+      const id  = ++this._isleCounter;
+      const x   = Math.min(src.position.x + 30, Math.max(0, this._wh.clientWidth  - src.dimensions.width));
+      const y   = Math.min(src.position.y + 30, Math.max(0, this._wh.clientHeight - src.dimensions.height));
+
+      const el = document.createElement('div');
+      el.className = 'isle';
+      Object.assign(el.style, {
+        left:`${x}px`, top:`${y}px`, width:`${src.dimensions.width}px`, height:`${src.dimensions.height}px`,
+        borderColor: src.color, transform:`rotate(${src.rotation}deg)`,
+      });
+      el.dataset.isleId = id;
+      el.innerHTML = `<div class="isle-header">${this._isleHeaderHtml(src.row || '', name, src.labelColor)}</div>`;
+
+      const body = document.createElement('div');
+      body.className = 'isle-body';
+
+      const isle = {
+        id, label: name, row: src.row || '',
+        color: src.color, shelfColor: src.shelfColor,
+        fillColor: src.fillColor, fillOpacity: src.fillOpacity,
+        labelColor: src.labelColor, rotation: src.rotation, facing: src.facing,
+        position: { x, y }, dimensions: { ...src.dimensions }, element: el,
+        shelfCount: src.shelfLabels.length, shelfLabels: [...src.shelfLabels],
+        subsectionStart: src.subsectionStart, subsectionCount: src.subsectionCount,
+        subsections: [], createdAt: new Date().toISOString(),
+      };
+
+      src.subsections.forEach(srcSub => {
+        const subId = ++this._subsectionCounter;
+        const subEl = document.createElement('div');
+        subEl.className = `subsection facing-${src.facing}`;
+        subEl.dataset.subsectionNum = srcSub.number;
+        const numEl = document.createElement('div');
+        numEl.className = 'sub-number'; numEl.textContent = srcSub.number;
+        subEl.appendChild(numEl);
+        const shelvesDiv = document.createElement('div'); shelvesDiv.className = 'sub-shelves';
+        const wallEl = document.createElement('div');     wallEl.className = 'wall-indicator';
+        const shelves = srcSub.shelves.map(ss => ({
+          id: ++this._shelfCounter, isleId: id, subsectionId: subId,
+          shelfNumber: ss.shelfNumber, label: ss.label, items: [], element: null,
+        }));
+        const makeSlot = (sh) => {
+          const slot = document.createElement('div');
+          slot.className = 'shelf-slot'; slot.textContent = sh.label;
+          slot.style.borderColor = src.shelfColor; sh.element = slot; return slot;
+        };
+        if (src.facing === 'left') { [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); shelvesDiv.appendChild(wallEl); }
+        else                       { shelvesDiv.appendChild(wallEl); shelves.forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); }
+        subEl.appendChild(shelvesDiv);
+        const subObj = { id: subId, isleId: id, number: srcSub.number, element: subEl, shelves };
+        isle.subsections.push(subObj);
+        subEl.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (this._drawMode || this._editMode || this._isleDragMoved) return;
+          this._ai = this._isles.find(i => i.id === id); this._asub = subObj;
+          this._openShelfSelect(subObj);
+        });
         body.appendChild(subEl);
       });
 
       el.appendChild(body);
-      applyIsleFill(el, src.fillColor, src.fillOpacity);
-      warehouse.appendChild(el);
-      isles.push(isle);
-      attachIsleClickHandler(isle);
-      if (editMode) createHandlesForEntity(isle, 'isle');
+      this._applyIsleFill(el, src.fillColor, src.fillOpacity);
+      this._wh.appendChild(el);
+      this._isles.push(isle);
+      this._attachIsleHandlers(isle);
+      if (this._editMode) this._createHandles(isle, 'isle');
 
-      countEl.textContent = `Isles: ${isles.length}`;
-      statusEl.textContent = `Isle "${name}" pasted.`;
-      hide('modal-paste-isle');
-    }
+      this.isleCountText = `Isles: ${this._isles.length}`;
+      this.statusText = `Isle "${name}" pasted.`;
+      this.m_pasteIsle = false;
+      this._saveLayout();
+    },
 
-    /* ══════════════════════════════════════════
-       BACKGROUND IMAGE
-    ══════════════════════════════════════════ */
-    let warehouseBg = null; // base64 data URL or null
+    // ── Background image ──────────────────────────────────────────────────────
 
-    function setWarehouseBackground(dataUrl) {
-      warehouseBg = dataUrl;
-      Object.assign(warehouse.style, {
-        backgroundImage:    `url(${dataUrl})`,
-        backgroundSize:     'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat:   'no-repeat',
+    triggerBgImport() { this.$refs.bgFileInput.click(); },
+    handleBgFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      e.target.value = '';
+      const reader = new FileReader();
+      reader.onload = (ev) => this._setWarehouseBg(ev.target.result);
+      reader.readAsDataURL(file);
+    },
+    _setWarehouseBg(dataUrl) {
+      this._warehouseBg = dataUrl;
+      Object.assign(this._wh.style, {
+        backgroundImage: `url(${dataUrl})`, backgroundSize:'cover',
+        backgroundPosition:'center', backgroundRepeat:'no-repeat',
       });
-      document.getElementById('btn-clear-bg').style.display = '';
-      statusEl.textContent = 'Background image set.';
-    }
+      this.hasBg = true; this.statusText = 'Background image set.';
+      this._saveLayout();
+    },
+    clearBackground() {
+      this._warehouseBg = null;
+      this._wh.style.backgroundImage = '';
+      this.hasBg = false; this.statusText = 'Background cleared.';
+      this._saveLayout();
+    },
 
-    function clearBackground() {
-      warehouseBg = null;
-      warehouse.style.backgroundImage = '';
-      document.getElementById('btn-clear-bg').style.display = 'none';
-      statusEl.textContent = 'Background cleared.';
-    }
+    // ── Modal helpers ─────────────────────────────────────────────────────────
 
-    /* ══════════════════════════════════════════
-       MULTI-WAREHOUSE MANAGEMENT
-    ══════════════════════════════════════════ */
-    function serializeCurrentWarehouse() {
-      const wh = warehouses[activeWarehouseIdx];
+    closeAllModals() {
+      this.m_count = this.m_subs = this.m_labels = this.m_subSel = this.m_shelfSel = false;
+      this.m_addShelf = this.m_shelfAct = this.m_addItem = this.m_rmItems = this.m_confDel = false;
+      this.m_zone = this.m_pasteIsle = this.m_delEnt = this.m_zoneAct = this.m_zoneItems = false;
+      this._ai = null; this._asub = null; this._ash = null; this._azfi = null;
+      this._selItemIds.clear(); this._selZoneItemIds.clear();
+      this.mc_selItemIds = []; this.mc_selZoneItemIds = [];
+      this.mc_selCount = 0; this.mc_zoneSelCount = 0;
+    },
+
+    // ── Search ────────────────────────────────────────────────────────────────
+
+    onSearchInput() {
+      if (!this.searchQuery.trim()) this.clearSearch();
+    },
+
+    runSearch() {
+      const query = this.searchQuery.trim();
+      if (!query) return;
+      this._clearHighlights();
+      const q = query.toLowerCase();
+
+      const matches = [];
+      for (const isle of this._isles)
+        for (const sub of isle.subsections)
+          for (const shelf of sub.shelves)
+            for (const item of shelf.items)
+              if (item.itemId.toLowerCase().includes(q))
+                matches.push({ type:'isle', isle, sub, shelf, item });
+
+      const zoneMatches = [];
+      for (const zone of this._zones)
+        for (const item of zone.items)
+          if (item.itemId.toLowerCase().includes(q))
+            zoneMatches.push({ type:'zone', zone, item });
+
+      const seenIsles = new Set(), seenSubs = new Set(), seenShelves = new Set(), seenZones = new Set();
+      matches.forEach(({ isle, sub, shelf }) => {
+        if (!seenIsles.has(isle.id))   { isle.element.classList.add('isle-highlight');   seenIsles.add(isle.id); }
+        if (!seenSubs.has(sub.id))     { sub.element.classList.add('sub-highlight');      seenSubs.add(sub.id); }
+        if (shelf.element && !seenShelves.has(shelf.id)) { shelf.element.classList.add('shelf-highlight'); seenShelves.add(shelf.id); }
+      });
+      zoneMatches.forEach(({ zone }) => {
+        if (!seenZones.has(zone.id)) { zone.element.classList.add('zone-highlight'); seenZones.add(zone.id); }
+      });
+
+      const esc = this._escH.bind(this);
+      const results = [];
+
+      matches.forEach(({ isle, sub, shelf, item }) => {
+        const html = [
+          `<span class="lbl">I:</span>${esc(isle.label)}`,
+          `<span class="sep">|</span><span class="lbl">SUB:</span>${sub.number}`,
+          `<span class="sep">|</span><span class="lbl">SH:</span>${esc(shelf.label)}`,
+          `<span class="sep">|</span><span class="lbl">ID:</span>${esc(item.itemId)}`,
+          item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${esc(item.type)}`   : '',
+          item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${esc(item.category)}` : '',
+        ].filter(Boolean).join('');
+        results.push({ html, cardStyle:'', scrollTarget: isle.element });
+      });
+
+      zoneMatches.forEach(({ zone, item }) => {
+        const html = [
+          `<span class="lbl">Z:</span>${esc(zone.label)}`,
+          `<span class="sep">|</span><span class="lbl">ID:</span>${esc(item.itemId)}`,
+          item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${esc(item.type)}`   : '',
+          item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${esc(item.category)}` : '',
+        ].filter(Boolean).join('');
+        results.push({ html, cardStyle:'border-left-color:#8b5cf6', scrollTarget: zone.element });
+      });
+
+      this.searchResults    = results;
+      this.showSearchResults = true;
+    },
+
+    scrollToResult(result) {
+      result.scrollTarget?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    },
+
+    clearSearch() {
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.showSearchResults = false;
+      this._clearHighlights();
+    },
+
+    _clearHighlights() {
+      this._wh.querySelectorAll('.isle-highlight,.sub-highlight,.shelf-highlight,.zone-highlight')
+        .forEach(el => el.classList.remove('isle-highlight','sub-highlight','shelf-highlight','zone-highlight'));
+    },
+
+    // ── Multi-warehouse / Tabs ────────────────────────────────────────────────
+
+    _syncTabs() {
+      this.tabs = this._warehouses.map(wh => ({ id: wh.id, name: wh.name }));
+      this.activeTabIdx = this._activeWhIdx;
+    },
+
+    _serializeCurrentWarehouse() {
+      const wh = this._warehouses[this._activeWhIdx];
       if (!wh) return;
-      wh.width      = parseFloat(warehouse.style.width)  || warehouse.clientWidth;
-      wh.height     = parseFloat(warehouse.style.height) || warehouse.clientHeight;
-      wh.background = warehouseBg;
-      wh.counters   = { isleCounter, subsectionCounter, shelfCounter, itemCounter, zoneCounter };
-      wh.isles = isles.map(isle => ({
+      wh.width      = parseFloat(this._wh.style.width)  || this._wh.clientWidth;
+      wh.height     = parseFloat(this._wh.style.height) || this._wh.clientHeight;
+      wh.background = this._warehouseBg;
+      wh.counters   = {
+        isleCounter:       this._isleCounter,
+        subsectionCounter: this._subsectionCounter,
+        shelfCounter:      this._shelfCounter,
+        itemCounter:       this._itemCounter,
+        zoneCounter:       this._zoneCounter,
+      };
+      wh.isles = this._isles.map(isle => ({
         id: isle.id, label: isle.label, row: isle.row || '', color: isle.color, shelfColor: isle.shelfColor,
-        fillColor: isle.fillColor || '#ffffff',
-        fillOpacity: isle.fillOpacity != null ? isle.fillOpacity : 0,
-        labelColor: isle.labelColor || isle.color,
-        rotation: isle.rotation || 0,
-        facing: isle.facing,
+        fillColor: isle.fillColor || '#ffffff', fillOpacity: isle.fillOpacity ?? 0,
+        labelColor: isle.labelColor || isle.color, rotation: isle.rotation || 0, facing: isle.facing,
         position: { ...isle.position }, dimensions: { ...isle.dimensions },
         shelfCount: isle.shelfCount, shelfLabels: [...isle.shelfLabels],
         subsectionStart: isle.subsectionStart, subsectionCount: isle.subsectionCount,
         createdAt: isle.createdAt,
         subsections: isle.subsections.map(sub => ({
           id: sub.id, number: sub.number,
-          shelves: sub.shelves.map(shelf => ({
-            id: shelf.id, shelfNumber: shelf.shelfNumber, label: shelf.label,
-            items: shelf.items.map(item => ({ ...item })),
+          shelves: sub.shelves.map(sh => ({
+            id: sh.id, shelfNumber: sh.shelfNumber, label: sh.label,
+            items: sh.items.map(item => ({ ...item })),
           })),
         })),
       }));
-      wh.zones = zones.map(zone => ({
+      wh.zones = this._zones.map(zone => ({
         id: zone.id, label: zone.label, color: zone.color,
-        fillOpacity: zone.fillOpacity != null ? zone.fillOpacity : 18,
-        labelColor: zone.labelColor || '#444444',
+        fillOpacity: zone.fillOpacity ?? 18, labelColor: zone.labelColor || '#444444',
         rotation: zone.rotation || 0,
         position: { ...zone.position }, dimensions: { ...zone.dimensions },
         items: (zone.items || []).map(item => ({ ...item })),
         createdAt: zone.createdAt,
       }));
-    }
+    },
 
-    function loadWarehouseDOM(wh) {
-      importLayout({
+    switchTab(idx) {
+      if (idx === this._activeWhIdx) return;
+      this._serializeCurrentWarehouse();
+      this._activeWhIdx = idx;
+      this._loadWarehouseDOM(this._warehouses[idx]);
+      this._syncTabs();
+    },
+
+    addTab() {
+      this._serializeCurrentWarehouse();
+      const id = ++this._whTabCounter;
+      this._warehouses.push({
+        id, name: `Warehouse ${this._warehouses.length + 1}`,
+        width: 800, height: 500, background: null,
+        counters: {}, isles: [], zones: [],
+      });
+      this._activeWhIdx = this._warehouses.length - 1;
+      this._loadWarehouseDOM(this._warehouses[this._activeWhIdx]);
+      this._syncTabs();
+      this._saveLayout();
+    },
+
+    removeTab(idx) {
+      if (this._warehouses.length <= 1) return;
+      this._serializeCurrentWarehouse();
+      this._warehouses.splice(idx, 1);
+      if (idx < this._activeWhIdx) {
+        this._activeWhIdx--;
+        this._syncTabs();
+      } else if (idx === this._activeWhIdx) {
+        this._activeWhIdx = Math.min(idx, this._warehouses.length - 1);
+        this._loadWarehouseDOM(this._warehouses[this._activeWhIdx]);
+        this._syncTabs();
+      } else {
+        this._syncTabs();
+      }
+      this._saveLayout();
+    },
+
+    startRenameTab(idx, e) {
+      this.renamingTabIdx = idx;
+      this.$nextTick(() => {
+        const inputs = this.$refs.tabNameInput;
+        const input  = Array.isArray(inputs) ? inputs[0] : inputs;
+        if (input) { input.focus(); input.select(); }
+      });
+    },
+
+    commitRenameTab(idx, e) {
+      const newName = e.target.value.trim() || this._warehouses[idx].name;
+      this._warehouses[idx].name = newName;
+      this.renamingTabIdx = -1;
+      this._syncTabs();
+      this._saveLayout();
+    },
+
+    cancelRenameTab(idx) {
+      this.renamingTabIdx = -1;
+      this._syncTabs();
+    },
+
+    _loadWarehouseDOM(wh) {
+      this._importLayout({
         warehouse: { width: wh.width || 800, height: wh.height || 500, background: wh.background || null },
         counters:  wh.counters || {},
         isles:     wh.isles   || [],
         zones:     wh.zones   || [],
       });
-      statusEl.textContent = `${escHtml(wh.name)} — ${isles.length} isle(s), ${zones.length} zone(s).`;
-    }
+      this.statusText = `${wh.name} — ${this._isles.length} isle(s), ${this._zones.length} zone(s).`;
+    },
 
-    function switchToWarehouse(idx) {
-      if (idx === activeWarehouseIdx) return;
-      serializeCurrentWarehouse();
-      activeWarehouseIdx = idx;
-      loadWarehouseDOM(warehouses[idx]);
-      renderTabs();
-    }
+    // ── Import / Rebuild ──────────────────────────────────────────────────────
 
-    function addWarehouse() {
-      serializeCurrentWarehouse();
-      const id = ++warehouseTabCounter;
-      warehouses.push({
-        id, name: `Warehouse ${warehouses.length + 1}`,
-        width: 800, height: 500, background: null,
-        counters: { isleCounter: 0, subsectionCounter: 0, shelfCounter: 0, itemCounter: 0, zoneCounter: 0 },
-        isles: [], zones: [],
-      });
-      activeWarehouseIdx = warehouses.length - 1;
-      loadWarehouseDOM(warehouses[activeWarehouseIdx]);
-      renderTabs();
-    }
-
-    function removeWarehouse(idx) {
-      if (warehouses.length <= 1) return;
-      serializeCurrentWarehouse();
-      warehouses.splice(idx, 1);
-      if (idx < activeWarehouseIdx) {
-        activeWarehouseIdx--;
-        renderTabs();
-      } else if (idx === activeWarehouseIdx) {
-        activeWarehouseIdx = Math.min(idx, warehouses.length - 1);
-        loadWarehouseDOM(warehouses[activeWarehouseIdx]);
-        renderTabs();
-      } else {
-        renderTabs();
-      }
-    }
-
-    function renderTabs() {
-      const bar = document.getElementById('tab-bar');
-      bar.innerHTML = '';
-      warehouses.forEach((wh, idx) => {
-        const tab = document.createElement('div');
-        tab.className = 'tab' + (idx === activeWarehouseIdx ? ' active' : '');
-        tab.title = 'Double-click to rename';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = wh.name;
-        tab.appendChild(nameSpan);
-
-        if (warehouses.length > 1) {
-          const closeBtn = document.createElement('button');
-          closeBtn.className = 'tab-close';
-          closeBtn.innerHTML = '&#x2715;';
-          closeBtn.title = 'Close this warehouse';
-          closeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeWarehouse(idx); });
-          tab.appendChild(closeBtn);
-        }
-
-        tab.addEventListener('click', () => { if (idx !== activeWarehouseIdx) switchToWarehouse(idx); });
-        tab.addEventListener('dblclick', (e) => { e.stopPropagation(); renameWarehouseStart(idx, tab, nameSpan); });
-        bar.appendChild(tab);
-      });
-
-      const addBtn = document.createElement('button');
-      addBtn.className = 'btn-add-tab';
-      addBtn.title = 'Add new warehouse';
-      addBtn.textContent = '+';
-      addBtn.addEventListener('click', addWarehouse);
-      bar.appendChild(addBtn);
-    }
-
-    function renameWarehouseStart(idx, tab, nameSpan) {
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'tab-name-input';
-      input.value = warehouses[idx].name;
-      tab.replaceChild(input, nameSpan);
-      input.focus(); input.select();
-
-      const commit = () => {
-        const newName = input.value.trim() || warehouses[idx].name;
-        warehouses[idx].name = newName;
-        renderTabs();
-      };
-      input.addEventListener('blur', commit);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-        if (e.key === 'Escape') { input.removeEventListener('blur', commit); renderTabs(); }
-      });
-    }
-
-    // Drag-and-drop an image onto the viewport to set warehouse background
-    viewport.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer.types.includes('Files')) return;
-      e.preventDefault();
-      warehouse.classList.add('drag-over');
-    });
-    viewport.addEventListener('dragleave', (e) => {
-      if (!viewport.contains(e.relatedTarget)) warehouse.classList.remove('drag-over');
-    });
-    viewport.addEventListener('drop', (e) => {
-      e.preventDefault();
-      warehouse.classList.remove('drag-over');
-      const file = [...e.dataTransfer.files].find(f => /^image\/(png|jpeg)$/.test(f.type));
-      if (!file) { statusEl.textContent = 'Only PNG or JPG images are supported.'; return; }
-      const reader = new FileReader();
-      reader.onload = (ev) => setWarehouseBackground(ev.target.result);
-      reader.readAsDataURL(file);
-    });
-    // Prevent browser navigation when files are dropped outside the viewport
-    document.addEventListener('dragover', (e) => e.preventDefault());
-    document.addEventListener('drop',     (e) => e.preventDefault());
-
-    /* ══════════════════════════════════════════
-       EXPORT / IMPORT
-    ══════════════════════════════════════════ */
-    function exportLayout() {
-      serializeCurrentWarehouse();
-      const data = {
-        version:            2,
-        exportedAt:         new Date().toISOString(),
-        activeWarehouseIdx: activeWarehouseIdx,
-        warehouses:         warehouses.map(wh => ({ ...wh })),
-      };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.download = `warehouse-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      statusEl.textContent = 'Layout saved.';
-    }
-
-    let pendingImportData = null;
-
-    function triggerImport() {
-      document.getElementById('import-file-input').click();
-    }
-
-    function handleImportFile(input) {
-      const file = input.files[0];
-      if (!file) return;
-      input.value = '';
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const data = JSON.parse(ev.target.result);
-          if (data.version === 2 && Array.isArray(data.warehouses)) {
-            // v2: multi-warehouse format
-            pendingImportData = data;
-          } else if (data.warehouse && Array.isArray(data.isles)) {
-            // v1: single warehouse — wrap into v2 structure
-            pendingImportData = {
-              version: 2,
-              activeWarehouseIdx: 0,
-              warehouses: [{
-                id: 1, name: 'Warehouse 1',
-                width:      data.warehouse.width      || 800,
-                height:     data.warehouse.height     || 500,
-                background: data.warehouse.background || null,
-                counters:   data.counters             || {},
-                isles:      data.isles                || [],
-                zones:      data.zones                || [],
-              }],
-            };
-          } else {
-            throw new Error('Invalid layout file.');
-          }
-          const isEmpty = warehouses.length === 1 && isles.length === 0 && zones.length === 0;
-          if (isEmpty) confirmImport();
-          else show('modal-confirm-import');
-        } catch (err) {
-          statusEl.textContent = `Import failed: ${err.message}`;
-        }
-      };
-      reader.readAsText(file);
-    }
-
-    function confirmImport() {
-      hide('modal-confirm-import');
-      if (!pendingImportData) return;
-      importAllWarehouses(pendingImportData);
-      pendingImportData = null;
-    }
-
-    function importAllWarehouses(data) {
-      // data is always v2 format at this point
-      warehouses.length = 0;
-      warehouseTabCounter = 0;
+    _importAllWarehouses(data) {
+      this._warehouses.length = 0;
+      this._whTabCounter = 0;
       (data.warehouses || []).forEach(wh => {
-        const id = wh.id || ++warehouseTabCounter;
-        if (id > warehouseTabCounter) warehouseTabCounter = id;
-        warehouses.push({
-          id,
-          name:       wh.name       || `Warehouse ${warehouses.length + 1}`,
-          width:      wh.width      || 800,
-          height:     wh.height     || 500,
-          background: wh.background || null,
-          counters:   wh.counters   || {},
-          isles:      wh.isles      || [],
-          zones:      wh.zones      || [],
+        const id = wh.id || ++this._whTabCounter;
+        if (id > this._whTabCounter) this._whTabCounter = id;
+        this._warehouses.push({
+          id, name: wh.name || `Warehouse ${this._warehouses.length + 1}`,
+          width: wh.width || 800, height: wh.height || 500,
+          background: wh.background || null, counters: wh.counters || {},
+          isles: wh.isles || [], zones: wh.zones || [],
         });
       });
-      if (warehouses.length === 0) {
-        warehouses.push({ id: ++warehouseTabCounter, name: 'Warehouse 1',
-          width: 800, height: 500, background: null,
-          counters: {}, isles: [], zones: [] });
+      if (!this._warehouses.length) {
+        this._warehouses.push({ id: ++this._whTabCounter, name: 'Warehouse 1',
+          width:800, height:500, background:null, counters:{}, isles:[], zones:[] });
       }
-      activeWarehouseIdx = Math.min(data.activeWarehouseIdx || 0, warehouses.length - 1);
-      loadWarehouseDOM(warehouses[activeWarehouseIdx]);
-      renderTabs();
-    }
+      this._activeWhIdx = Math.min(data.activeWarehouseIdx || 0, this._warehouses.length - 1);
+      this._loadWarehouseDOM(this._warehouses[this._activeWhIdx]);
+      this._syncTabs();
+      this.$nextTick(() => this._resetView());
+    },
 
-    function rebuildIsleFromData(isleData) {
-      const { id, label, color, shelfColor, facing, position, dimensions,
-              shelfLabels, subsectionStart, subsectionCount, createdAt } = isleData;
-      const row         = isleData.row         || '';
-      const sc          = shelfColor || '#aaaaaa';
-      const fillColor   = isleData.fillColor   || '#ffffff';
-      const fillOpacity = isleData.fillOpacity != null ? isleData.fillOpacity : 0;
-      const labelColor  = isleData.labelColor  || color;
-      const rotation    = isleData.rotation    || 0;
+    _importLayout(data) {
+      if (this._drawMode) this._cancelDrawMode();
+      if (this._editMode) this._cancelEditMode();
+      this.closeAllModals();
+
+      this._isles.forEach(i => i.element.remove());
+      this._isles.length = 0;
+      this._zones.forEach(z => z.element.remove());
+      this._zones.length = 0;
+      this._removeAllHandles();
+
+      this._wh.style.width  = data.warehouse.width  + 'px';
+      this._wh.style.height = data.warehouse.height + 'px';
+
+      if (data.warehouse.background) this._setWarehouseBgSilent(data.warehouse.background);
+      else this._clearBgSilent();
+
+      const c = data.counters || {};
+      this._isleCounter       = c.isleCounter       || 0;
+      this._subsectionCounter = c.subsectionCounter  || 0;
+      this._shelfCounter      = c.shelfCounter       || 0;
+      this._itemCounter       = c.itemCounter        || 0;
+      this._zoneCounter       = c.zoneCounter        || 0;
+
+      (data.isles || []).forEach(d => this._rebuildIsle(d));
+      (data.zones || []).forEach(d => this._rebuildZone(d));
+
+      this.isleCountText = `Isles: ${this._isles.length}`;
+      // Use rAF to defer until after the browser has computed layout,
+      // ensuring getBoundingClientRect() on the viewport returns correct dimensions.
+      requestAnimationFrame(() => this._resetView());
+    },
+
+    _setWarehouseBgSilent(dataUrl) {
+      this._warehouseBg = dataUrl;
+      Object.assign(this._wh.style, {
+        backgroundImage: `url(${dataUrl})`, backgroundSize:'cover',
+        backgroundPosition:'center', backgroundRepeat:'no-repeat',
+      });
+      this.hasBg = true;
+    },
+    _clearBgSilent() {
+      this._warehouseBg = null;
+      this._wh.style.backgroundImage = '';
+      this.hasBg = false;
+    },
+
+    _rebuildIsle(d) {
+      const row = d.row || '', sc = d.shelfColor || '#aaaaaa';
+      const fillColor   = d.fillColor   || '#ffffff';
+      const fillOpacity = d.fillOpacity ?? 0;
+      const labelColor  = d.labelColor  || d.color;
+      const rotation    = d.rotation    || 0;
 
       const el = document.createElement('div');
       el.className = 'isle';
       Object.assign(el.style, {
-        left: `${position.x}px`, top: `${position.y}px`,
-        width: `${dimensions.width}px`, height: `${dimensions.height}px`,
-        borderColor: color,
-        transform: `rotate(${rotation}deg)`,
+        left:`${d.position.x}px`, top:`${d.position.y}px`,
+        width:`${d.dimensions.width}px`, height:`${d.dimensions.height}px`,
+        borderColor: d.color, transform:`rotate(${rotation}deg)`,
       });
-      el.dataset.isleId = id;
-      el.innerHTML = `<div class="isle-header">${buildIsleHeaderHtml(row, label, labelColor)}</div>`;
+      el.dataset.isleId = d.id;
+      el.innerHTML = `<div class="isle-header">${this._isleHeaderHtml(row, d.label, labelColor)}</div>`;
 
       const body = document.createElement('div');
       body.className = 'isle-body';
 
       const isle = {
-        id, label, row, color, shelfColor: sc, fillColor, fillOpacity, labelColor, rotation, facing,
-        position: { ...position }, dimensions: { ...dimensions },
-        element: el, shelfCount: shelfLabels.length, shelfLabels: [...shelfLabels],
-        subsectionStart, subsectionCount, subsections: [], createdAt,
+        id: d.id, label: d.label, row, color: d.color, shelfColor: sc,
+        fillColor, fillOpacity, labelColor, rotation, facing: d.facing,
+        position: { ...d.position }, dimensions: { ...d.dimensions }, element: el,
+        shelfCount: (d.shelfLabels || []).length, shelfLabels: [...(d.shelfLabels || [])],
+        subsectionStart: d.subsectionStart, subsectionCount: d.subsectionCount,
+        subsections: [], createdAt: d.createdAt,
       };
 
-      (isleData.subsections || []).forEach(subData => {
+      (d.subsections || []).forEach(sd => {
         const subEl = document.createElement('div');
-        subEl.className = `subsection facing-${facing}`;
-        subEl.dataset.subsectionNum = subData.number;
+        subEl.className = `subsection facing-${d.facing}`;
+        subEl.dataset.subsectionNum = sd.number;
+        const numEl = document.createElement('div');
+        numEl.className = 'sub-number'; numEl.textContent = sd.number;
+        subEl.appendChild(numEl);
 
-        const subNumEl = document.createElement('div');
-        subNumEl.className = 'sub-number';
-        subNumEl.textContent = subData.number;
-        subEl.appendChild(subNumEl);
+        const shelvesDiv = document.createElement('div'); shelvesDiv.className = 'sub-shelves';
+        const wallEl     = document.createElement('div'); wallEl.className = 'wall-indicator';
 
-        const shelvesDiv = document.createElement('div');
-        shelvesDiv.className = 'sub-shelves';
-
-        const wallEl = document.createElement('div');
-        wallEl.className = 'wall-indicator';
-
-        const shelves = (subData.shelves || []).map(shelfData => ({
-          id:           shelfData.id,
-          isleId:       id,
-          subsectionId: subData.id,
-          shelfNumber:  shelfData.shelfNumber,
-          label:        shelfData.label,
-          items:        (shelfData.items || []).map(item => ({ ...item })),
-          element:      null,
+        const shelves = (sd.shelves || []).map(shd => ({
+          id: shd.id, isleId: d.id, subsectionId: sd.id,
+          shelfNumber: shd.shelfNumber, label: shd.label,
+          items: (shd.items || []).map(item => ({ ...item })), element: null,
         }));
 
-        const makeSlot = (shelf) => {
+        const makeSlot = (sh) => {
           const slot = document.createElement('div');
-          slot.className = 'shelf-slot';
-          slot.textContent = shelf.label;
-          slot.style.borderColor = sc;
-          shelf.element = slot;
-          return slot;
+          slot.className = 'shelf-slot'; slot.textContent = sh.label;
+          slot.style.borderColor = sc; sh.element = slot; return slot;
         };
 
-        if (facing === 'left') {
-          [...shelves].reverse().forEach(shelf => shelvesDiv.appendChild(makeSlot(shelf)));
+        if (d.facing === 'left') {
+          [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh)));
           shelvesDiv.appendChild(wallEl);
         } else {
           shelvesDiv.appendChild(wallEl);
-          shelves.forEach(shelf => shelvesDiv.appendChild(makeSlot(shelf)));
+          shelves.forEach(sh => shelvesDiv.appendChild(makeSlot(sh)));
         }
         subEl.appendChild(shelvesDiv);
 
-        const subObj = { id: subData.id, isleId: id, number: subData.number, element: subEl, shelves };
+        const subObj = { id: sd.id, isleId: d.id, number: sd.number, element: subEl, shelves };
         isle.subsections.push(subObj);
 
         subEl.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (drawMode || editMode || isleDragMoved) return;
-          activeIsle       = isles.find(i => i.id === id);
-          activeSubsection = subObj;
-          openShelfSelect(subObj);
+          if (this._drawMode || this._editMode || this._isleDragMoved) return;
+          this._ai   = this._isles.find(i => i.id === d.id);
+          this._asub = subObj;
+          this._openShelfSelect(subObj);
         });
-
         body.appendChild(subEl);
       });
 
       el.appendChild(body);
-      applyIsleFill(el, fillColor, fillOpacity);
-      warehouse.appendChild(el);
-      isles.push(isle);
-      attachIsleClickHandler(isle);
-    }
+      this._applyIsleFill(el, fillColor, fillOpacity);
+      this._wh.appendChild(el);
+      this._isles.push(isle);
+      this._attachIsleHandlers(isle);
+    },
 
-    function rebuildZoneFromData(zoneData) {
-      const { id, label, color, position, dimensions, createdAt } = zoneData;
-      const fillOpacity = zoneData.fillOpacity != null ? zoneData.fillOpacity : 18;
-      const labelColor  = zoneData.labelColor  || '#444444';
-      const rotation    = zoneData.rotation    || 0;
+    _rebuildZone(d) {
+      const fillOpacity = d.fillOpacity ?? 18;
+      const labelColor  = d.labelColor  || '#444444';
+      const rotation    = d.rotation    || 0;
       const el = document.createElement('div');
       el.className = 'zone';
       Object.assign(el.style, {
-        left: `${position.x}px`, top: `${position.y}px`,
-        width: `${dimensions.width}px`, height: `${dimensions.height}px`,
-        borderColor: color,
-        transform: `rotate(${rotation}deg)`,
+        left:`${d.position.x}px`, top:`${d.position.y}px`,
+        width:`${d.dimensions.width}px`, height:`${d.dimensions.height}px`,
+        borderColor: d.color, transform:`rotate(${rotation}deg)`,
       });
-      applyZoneFill(el, color, fillOpacity);
-      el.dataset.zoneId = id;
-      const labelEl = document.createElement('div');
-      labelEl.className = 'zone-label';
-      labelEl.textContent = label;
-      labelEl.style.color = labelColor;
-      el.appendChild(labelEl);
-      warehouse.appendChild(el);
-      const items = (zoneData.items || []).map(item => ({ ...item }));
-      const zone = { id, label, color, fillOpacity, labelColor, rotation,
-                     position: { ...position }, dimensions: { ...dimensions },
-                     items, element: el, createdAt };
-      zones.push(zone);
-      attachZoneHandlers(zone);
-    }
-
-    function importLayout(data) {
-      if (drawMode) cancelDrawMode();
-      if (editMode) cancelEditMode();
-      closeAllModals();
-
-      isles.forEach(isle => isle.element.remove());
-      isles.length = 0;
-      zones.forEach(zone => zone.element.remove());
-      zones.length = 0;
-      removeEditHandles();
-
-      warehouse.style.width  = data.warehouse.width  + 'px';
-      warehouse.style.height = data.warehouse.height + 'px';
-
-      if (data.warehouse.background) {
-        setWarehouseBackground(data.warehouse.background);
-      } else {
-        clearBackground();
-      }
-
-      const c = data.counters || {};
-      isleCounter       = c.isleCounter       || 0;
-      subsectionCounter = c.subsectionCounter || 0;
-      shelfCounter      = c.shelfCounter      || 0;
-      itemCounter       = c.itemCounter       || 0;
-      zoneCounter       = c.zoneCounter       || 0;
-
-      (data.isles || []).forEach(rebuildIsleFromData);
-      (data.zones || []).forEach(rebuildZoneFromData);
-
-      countEl.textContent = `Isles: ${isles.length}`;
-      statusEl.textContent = `Loaded: ${isles.length} isle(s), ${zones.length} zone(s).`;
-      resetView();
-    }
-
-    window.isles = isles;
+      this._applyZoneFill(el, d.color, fillOpacity);
+      el.dataset.zoneId = d.id;
+      const lblEl = document.createElement('div');
+      lblEl.className = 'zone-label'; lblEl.textContent = d.label; lblEl.style.color = labelColor;
+      el.appendChild(lblEl);
+      this._wh.appendChild(el);
+      const zone = {
+        id: d.id, label: d.label, color: d.color, fillOpacity, labelColor, rotation,
+        position: { ...d.position }, dimensions: { ...d.dimensions },
+        items: (d.items || []).map(i => ({ ...i })), element: el, createdAt: d.createdAt,
+      };
+      this._zones.push(zone);
+      this._attachZoneHandlers(zone);
+    },
+  },
+}).mount('#app');
