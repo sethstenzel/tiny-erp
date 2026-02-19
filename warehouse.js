@@ -53,6 +53,8 @@ createApp({
       f_itemType:      '',
       f_itemCategory:  '',
       f_itemNotes:     '',
+      f_itemTags:      '',
+      f_itemUrl:       '',
       f_pasteIsleName: '',
 
       // Validation error flags
@@ -1149,7 +1151,8 @@ createApp({
     openAddItem() {
       this.m_shelfAct = false;
       this.mc_addItemSub = `${this._ai.label} › Sub ${this._asub.number} › ${this._ash.label}`;
-      this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = ''; this.f_itemNotes = '';
+      this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = '';
+      this.f_itemNotes = ''; this.f_itemTags = ''; this.f_itemUrl = '';
       this.itemIdError = false;
       this.m_addItem = true;
       this.$nextTick(() => this.$refs.itemIdInput?.focus());
@@ -1178,6 +1181,7 @@ createApp({
         const payload = {
           item_id: itemId, item_type: this.f_itemType.trim(),
           category: this.f_itemCategory.trim(), notes: this.f_itemNotes.trim(),
+          url: this.f_itemUrl.trim(), tags: this.f_itemTags.trim(),
           added_at: now, location_type: 'zone',
           warehouse_id: this._warehouses[this._activeWhIdx]?.id,
           warehouse_name: this._warehouses[this._activeWhIdx]?.name || '',
@@ -1196,6 +1200,7 @@ createApp({
         const payload = {
           item_id: itemId, item_type: this.f_itemType.trim(),
           category: this.f_itemCategory.trim(), notes: this.f_itemNotes.trim(),
+          url: this.f_itemUrl.trim(), tags: this.f_itemTags.trim(),
           added_at: now, location_type: 'shelf',
           warehouse_id: wh?.id, warehouse_name: wh?.name || '',
           isle_id: this._ai.id, isle_label: this._ai.label, isle_row: this._ai.row || '',
@@ -1258,7 +1263,8 @@ createApp({
     openAddZoneItem() {
       this.m_zoneAct = false;
       this.mc_addItemSub = `Zone: ${this._azfi.label}`;
-      this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = ''; this.f_itemNotes = '';
+      this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = '';
+      this.f_itemNotes = ''; this.f_itemTags = ''; this.f_itemUrl = '';
       this.itemIdError = false;
       this.m_addItem = true;
       this.$nextTick(() => this.$refs.itemIdInput?.focus());

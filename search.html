@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IndSurp — Item Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #0f172a;
+      font-family: 'Inter', system-ui, sans-serif;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .app-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 0 20px; height: 56px; flex-shrink: 0;
+      background: linear-gradient(90deg, #1e293b 0%, #0f1f35 100%);
+      border-bottom: 1px solid #1e3a5f;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .brand-name {
+      font-size: 22px; font-weight: 800; letter-spacing: 1px; white-space: nowrap;
+      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 80%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .page-title {
+      font-size: 14px; font-weight: 600; color: #64748b;
+      border-left: 1px solid #334155; padding-left: 14px; white-space: nowrap;
+    }
+    .header-spacer { flex: 1; }
+    .btn-back {
+      padding: 5px 12px; background: transparent; color: #94a3b8;
+      border: 1px solid #334155; border-radius: 6px;
+      font-family: inherit; font-size: 12px; font-weight: 600;
+      text-decoration: none; white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-back:hover { color: #e2e8f0; border-color: #64748b; }
+    .user-info { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .user-role-badge {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+      padding: 3px 8px; border-radius: 99px;
+    }
+    .user-role-badge.admin { background: #1e3a5f; color: #60a5fa; border: 1px solid #2563eb; }
+    .user-role-badge.worker { background: #1a2e1a; color: #86efac; border: 1px solid #16a34a; }
+    .user-name { font-size: 13px; font-weight: 500; color: #94a3b8; }
+    .btn-logout {
+      padding: 5px 12px; background: transparent; color: #64748b;
+      border: 1px solid #334155; border-radius: 6px;
+      font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-logout:hover { color: #e2e8f0; border-color: #64748b; }
+
+    /* ── Page content ── */
+    .page-content {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+
+    /* ── Search panel ── */
+    .search-panel {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px 24px 20px;
+      margin-bottom: 24px;
+    }
+    .quick-row {
+      display: flex; gap: 10px; margin-bottom: 20px;
+    }
+    .quick-row input {
+      flex: 1; padding: 10px 14px;
+      background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+      color: #e2e8f0; font-family: inherit; font-size: 14px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .quick-row input:focus { border-color: #3b82f6; }
+    .quick-row input::placeholder { color: #475569; }
+
+    .section-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px;
+      color: #475569; margin-bottom: 10px; margin-top: 4px;
+    }
+    .filters-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px 14px;
+      margin-bottom: 14px;
+    }
+    .filter-field { display: flex; flex-direction: column; gap: 4px; }
+    .filter-field label {
+      font-size: 11px; font-weight: 600; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .filter-field input,
+    .filter-field select {
+      padding: 8px 10px;
+      background: #0f172a; border: 1px solid #334155; border-radius: 7px;
+      color: #e2e8f0; font-family: inherit; font-size: 13px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .filter-field input:focus,
+    .filter-field select:focus { border-color: #3b82f6; }
+    .filter-field input::placeholder { color: #475569; }
+    .filter-field select option { background: #1e293b; }
+
+    .divider {
+      border: none; border-top: 1px solid #1e3a5f; margin: 16px 0 14px;
+    }
+
+    .action-row {
+      display: flex; gap: 10px; align-items: center; margin-top: 4px;
+    }
+    .btn-search {
+      padding: 9px 24px; background: #3b82f6; color: #fff; border: none;
+      border-radius: 7px; font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-search:hover { background: #2563eb; }
+    .btn-search:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-clear {
+      padding: 9px 18px; background: transparent; color: #64748b;
+      border: 1px solid #334155; border-radius: 7px;
+      font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-clear:hover { color: #e2e8f0; border-color: #64748b; }
+    .search-status { font-size: 13px; color: #475569; margin-left: 4px; }
+
+    /* ── Results ── */
+    .results-header {
+      display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px;
+    }
+    .results-title {
+      font-size: 15px; font-weight: 700; color: #e2e8f0;
+    }
+    .results-count {
+      font-size: 13px; color: #475569;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid #334155;
+      border-radius: 10px;
+    }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    thead th {
+      padding: 11px 14px; text-align: left;
+      background: #1e293b;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #64748b; white-space: nowrap;
+      border-bottom: 1px solid #334155;
+    }
+    tbody tr {
+      border-bottom: 1px solid #1e293b;
+      transition: background 0.1s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #1e293b; }
+    tbody td {
+      padding: 10px 14px; vertical-align: top; color: #cbd5e1;
+      max-width: 260px;
+    }
+    .cell-id { font-weight: 600; color: #e2e8f0; white-space: nowrap; }
+    .cell-url a {
+      color: #60a5fa; text-decoration: none; word-break: break-all;
+    }
+    .cell-url a:hover { text-decoration: underline; }
+    .cell-notes { color: #94a3b8; font-style: italic; white-space: pre-wrap; word-break: break-word; }
+    .cell-location { white-space: nowrap; }
+    .loc-path { display: flex; flex-direction: column; gap: 2px; }
+    .loc-type {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #475569;
+    }
+    .loc-detail { font-size: 12px; color: #94a3b8; }
+    .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+    .tag-chip {
+      display: inline-block; padding: 2px 8px;
+      background: #1e3a5f; color: #60a5fa;
+      border: 1px solid #1e4a7f; border-radius: 99px;
+      font-size: 11px; font-weight: 500; white-space: nowrap;
+    }
+    .cell-date { white-space: nowrap; color: #64748b; font-size: 12px; }
+
+    .empty-state {
+      text-align: center; padding: 60px 20px;
+      color: #475569; font-size: 14px;
+    }
+    .empty-state .icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+    .empty-state p { margin: 4px 0; }
+    .empty-state .hint { font-size: 12px; color: #334155; margin-top: 8px; }
+
+    .state-initial .icon { opacity: 0.3; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="brand-name">IndSurp</div>
+    <div class="page-title">Item Search</div>
+    <div class="header-spacer"></div>
+    <a class="btn-back" href="/">← Warehouse</a>
+    <div class="user-info">
+      <span class="user-role-badge" id="roleBadge"></span>
+      <span class="user-name" id="userName"></span>
+      <button class="btn-logout" id="logoutBtn">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+
+    <!-- Search panel -->
+    <div class="search-panel">
+
+      <!-- Quick search -->
+      <div class="quick-row">
+        <input type="text" id="q" placeholder="Quick search across all fields…" />
+        <button class="btn-search" id="searchBtn">Search</button>
+        <button class="btn-clear" id="clearBtn">Clear</button>
+      </div>
+
+      <!-- Item detail filters -->
+      <div class="section-label">Item Details</div>
+      <div class="filters-grid" id="itemFilters">
+        <div class="filter-field">
+          <label>Item ID</label>
+          <input type="text" id="f_item_id" placeholder="e.g. SKU-001" />
+        </div>
+        <div class="filter-field">
+          <label>Item Type</label>
+          <input type="text" id="f_item_type" placeholder="e.g. Electronics" />
+        </div>
+        <div class="filter-field">
+          <label>Category</label>
+          <input type="text" id="f_category" placeholder="e.g. Accessories" />
+        </div>
+        <div class="filter-field">
+          <label>Tags</label>
+          <input type="text" id="f_tags" placeholder="e.g. fragile" />
+        </div>
+        <div class="filter-field">
+          <label>URL contains</label>
+          <input type="text" id="f_url" placeholder="e.g. supplier.com" />
+        </div>
+        <div class="filter-field">
+          <label>Notes contain</label>
+          <input type="text" id="f_notes" placeholder="keyword in notes" />
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Location filters -->
+      <div class="section-label">Location</div>
+      <div class="filters-grid">
+        <div class="filter-field">
+          <label>Location Type</label>
+          <select id="f_location_type">
+            <option value="">Any</option>
+            <option value="shelf">Shelf</option>
+            <option value="zone">Zone</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>Warehouse</label>
+          <input type="text" id="f_warehouse_name" placeholder="e.g. Main Warehouse" />
+        </div>
+        <div class="filter-field">
+          <label>Isle Row</label>
+          <input type="text" id="f_isle_row" placeholder="e.g. A" />
+        </div>
+        <div class="filter-field">
+          <label>Isle Label</label>
+          <input type="text" id="f_isle_label" placeholder="e.g. Electronics Row" />
+        </div>
+        <div class="filter-field">
+          <label>Shelf Label</label>
+          <input type="text" id="f_shelf_label" placeholder="e.g. Top Shelf" />
+        </div>
+        <div class="filter-field">
+          <label>Zone Label</label>
+          <input type="text" id="f_zone_label" placeholder="e.g. Receiving" />
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Date filters -->
+      <div class="section-label">Date Added</div>
+      <div class="filters-grid">
+        <div class="filter-field">
+          <label>From</label>
+          <input type="date" id="f_date_from" />
+        </div>
+        <div class="filter-field">
+          <label>To</label>
+          <input type="date" id="f_date_to" />
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button class="btn-search" id="searchBtn2">Search</button>
+        <button class="btn-clear" id="clearBtn2">Clear</button>
+        <span class="search-status" id="searchStatus"></span>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="resultsSection">
+      <div class="empty-state state-initial">
+        <div class="icon">🔍</div>
+        <p>Enter search terms above and click <strong>Search</strong></p>
+        <p class="hint">Leave all fields blank to retrieve every item</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    let currentUser = null;
+
+    async function checkAuth() {
+      const resp = await fetch('/api/me');
+      if (resp.status === 401) { window.location.href = '/login'; return false; }
+      currentUser = await resp.json();
+      document.getElementById('roleBadge').textContent = currentUser.role;
+      document.getElementById('roleBadge').className = 'user-role-badge ' + currentUser.role;
+      document.getElementById('userName').textContent = currentUser.username;
+      return true;
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/login';
+    });
+
+    // ── Search ────────────────────────────────────────────────────────────────
+    function getParams() {
+      const p = new URLSearchParams();
+      const add = (id, key) => {
+        const v = document.getElementById(id).value.trim();
+        if (v) p.set(key, v);
+      };
+      add('q',                'q');
+      add('f_item_id',        'item_id');
+      add('f_item_type',      'item_type');
+      add('f_category',       'category');
+      add('f_tags',           'tags');
+      add('f_url',            'url');
+      add('f_notes',          'notes');
+      add('f_location_type',  'location_type');
+      add('f_warehouse_name', 'warehouse_name');
+      add('f_isle_row',       'isle_row');
+      add('f_isle_label',     'isle_label');
+      add('f_shelf_label',    'shelf_label');
+      add('f_zone_label',     'zone_label');
+      add('f_date_from',      'date_from');
+      add('f_date_to',        'date_to');
+      return p;
+    }
+
+    function clearAll() {
+      ['q','f_item_id','f_item_type','f_category','f_tags','f_url','f_notes',
+       'f_warehouse_name','f_isle_row','f_isle_label','f_shelf_label','f_zone_label',
+       'f_date_from','f_date_to'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('f_location_type').value = '';
+      document.getElementById('searchStatus').textContent = '';
+      document.getElementById('resultsSection').innerHTML = `
+        <div class="empty-state state-initial">
+          <div class="icon">🔍</div>
+          <p>Enter search terms above and click <strong>Search</strong></p>
+          <p class="hint">Leave all fields blank to retrieve every item</p>
+        </div>`;
+    }
+
+    function formatDate(iso) {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+      } catch { return iso.slice(0, 10); }
+    }
+
+    function formatLocation(item) {
+      if (item.location_type === 'zone') {
+        const parts = [item.warehouse_name, item.zone_label].filter(Boolean);
+        return `<div class="loc-path">
+          <span class="loc-type">Zone</span>
+          <span class="loc-detail">${esc(parts.join(' › '))}</span>
+        </div>`;
+      }
+      const parts = [];
+      if (item.warehouse_name) parts.push(item.warehouse_name);
+      if (item.isle_row)        parts.push(`Row ${item.isle_row}`);
+      if (item.isle_label)      parts.push(item.isle_label);
+      if (item.subsection_number != null) parts.push(`Sub ${item.subsection_number}`);
+      if (item.shelf_label)     parts.push(item.shelf_label);
+      return `<div class="loc-path">
+        <span class="loc-type">Shelf</span>
+        <span class="loc-detail">${esc(parts.join(' › '))}</span>
+      </div>`;
+    }
+
+    function renderTags(raw) {
+      if (!raw) return '—';
+      const chips = raw.split(',').map(t => t.trim()).filter(Boolean)
+        .map(t => `<span class="tag-chip">${esc(t)}</span>`).join('');
+      return chips ? `<div class="tags-cell">${chips}</div>` : '—';
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function renderResults(items) {
+      const section = document.getElementById('resultsSection');
+      if (items.length === 0) {
+        section.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">📭</div>
+            <p>No items matched your search</p>
+            <p class="hint">Try broadening your filters</p>
+          </div>`;
+        return;
+      }
+
+      const rows = items.map(item => `
+        <tr>
+          <td class="cell-id">${esc(item.item_id)}</td>
+          <td>${esc(item.item_type || '—')}</td>
+          <td>${esc(item.category || '—')}</td>
+          <td>${renderTags(item.tags)}</td>
+          <td class="cell-url">${item.url
+            ? `<a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.url)}</a>`
+            : '—'}</td>
+          <td class="cell-notes">${esc(item.notes || '—')}</td>
+          <td class="cell-location">${formatLocation(item)}</td>
+          <td class="cell-date">${formatDate(item.added_at)}</td>
+        </tr>`).join('');
+
+      section.innerHTML = `
+        <div class="results-header">
+          <span class="results-title">Results</span>
+          <span class="results-count">${items.length} item${items.length !== 1 ? 's' : ''} found</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item ID</th>
+                <th>Type</th>
+                <th>Category</th>
+                <th>Tags</th>
+                <th>URL</th>
+                <th>Notes</th>
+                <th>Location</th>
+                <th>Added</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    async function doSearch() {
+      const params = getParams();
+      const statusEl = document.getElementById('searchStatus');
+      [document.getElementById('searchBtn'), document.getElementById('searchBtn2')]
+        .forEach(b => b.disabled = true);
+      statusEl.textContent = 'Searching…';
+      try {
+        const resp = await fetch('/api/search?' + params.toString());
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        const items = await resp.json();
+        renderResults(items);
+        statusEl.textContent = '';
+      } catch (err) {
+        statusEl.textContent = 'Search failed.';
+        console.error(err);
+      } finally {
+        [document.getElementById('searchBtn'), document.getElementById('searchBtn2')]
+          .forEach(b => b.disabled = false);
+      }
+    }
+
+    // ── Event wiring ─────────────────────────────────────────────────────────
+    document.getElementById('searchBtn').addEventListener('click', doSearch);
+    document.getElementById('searchBtn2').addEventListener('click', doSearch);
+    document.getElementById('clearBtn').addEventListener('click', clearAll);
+    document.getElementById('clearBtn2').addEventListener('click', clearAll);
+
+    // Enter key on any input triggers search
+    document.querySelectorAll('input').forEach(el => {
+      el.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+    });
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    checkAuth().then(ok => { if (ok) document.getElementById('q').focus(); });
+  </script>
+</body>
+</html>

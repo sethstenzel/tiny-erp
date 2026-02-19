@@ -68,6 +68,12 @@ def init_db():
         "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
         ("worker", "worker", "worker"),
     )
+    # Add new columns to items if they don't exist yet (migration)
+    existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)").fetchall()}
+    if "url" not in existing_cols:
+        conn.execute("ALTER TABLE items ADD COLUMN url TEXT DEFAULT ''")
+    if "tags" not in existing_cols:
+        conn.execute("ALTER TABLE items ADD COLUMN tags TEXT DEFAULT ''")
     conn.commit()
     conn.close()
 
@@ -99,6 +105,11 @@ async def serve_app():
 @app.get("/login")
 async def serve_login():
     return FileResponse("login.html")
+
+
+@app.get("/search")
+async def serve_search():
+    return FileResponse("search.html")
 
 
 @app.get("/warehouse.css")
@@ -200,6 +211,8 @@ class ItemBody(BaseModel):
     item_type: str = ""
     category: str = ""
     notes: str = ""
+    url: str = ""
+    tags: str = ""
     added_at: str = ""
     location_type: str = "shelf"
     warehouse_id: Optional[int] = None
@@ -215,6 +228,68 @@ class ItemBody(BaseModel):
     zone_label: str = ""
 
 
+@app.get("/api/search")
+def search_items(
+    q: str = "",
+    item_id: str = "",
+    item_type: str = "",
+    category: str = "",
+    tags: str = "",
+    notes: str = "",
+    url: str = "",
+    warehouse_name: str = "",
+    isle_row: str = "",
+    isle_label: str = "",
+    shelf_label: str = "",
+    zone_label: str = "",
+    location_type: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    user: dict = Depends(get_current_user),
+):
+    conditions: list[str] = []
+    params: list = []
+
+    if q:
+        like = f"%{q.lower()}%"
+        conditions.append(
+            "(LOWER(item_id) LIKE ? OR LOWER(item_type) LIKE ? OR LOWER(category) LIKE ?"
+            " OR LOWER(notes) LIKE ? OR LOWER(url) LIKE ? OR LOWER(tags) LIKE ?"
+            " OR LOWER(warehouse_name) LIKE ? OR LOWER(isle_label) LIKE ?"
+            " OR LOWER(shelf_label) LIKE ? OR LOWER(zone_label) LIKE ?)"
+        )
+        params.extend([like] * 10)
+
+    for col, val in [
+        ("item_id", item_id), ("item_type", item_type), ("category", category),
+        ("tags", tags), ("notes", notes), ("url", url),
+        ("warehouse_name", warehouse_name), ("isle_row", isle_row),
+        ("isle_label", isle_label), ("shelf_label", shelf_label),
+        ("zone_label", zone_label),
+    ]:
+        if val:
+            conditions.append(f"LOWER({col}) LIKE ?")
+            params.append(f"%{val.lower()}%")
+
+    if location_type:
+        conditions.append("location_type = ?")
+        params.append(location_type)
+    if date_from:
+        conditions.append("added_at >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("added_at <= ?")
+        params.append(date_to + "T23:59:59")
+
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    conn = get_db()
+    rows = conn.execute(
+        f"SELECT * FROM items {where} ORDER BY added_at DESC", params
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 @app.post("/api/items")
 def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
     added_at = body.added_at or datetime.now(timezone.utc).isoformat()
@@ -222,16 +297,17 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
     cur = conn.execute(
         """
         INSERT INTO items (
-            item_id, item_type, category, notes, added_at,
+            item_id, item_type, category, notes, url, tags, added_at,
             location_type, warehouse_id, warehouse_name,
             isle_id, isle_label, isle_row,
             subsection_id, subsection_number,
             shelf_id, shelf_label,
             zone_id, zone_label
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            body.item_id, body.item_type, body.category, body.notes, added_at,
+            body.item_id, body.item_type, body.category, body.notes,
+            body.url, body.tags, added_at,
             body.location_type, body.warehouse_id, body.warehouse_name,
             body.isle_id, body.isle_label, body.isle_row,
             body.subsection_id, body.subsection_number,

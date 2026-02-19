@@ -40,6 +40,7 @@
       </div>
     </div>
     <div class="brand-name">IndSurp</div>
+    <a class="btn-search-page" href="/search" target="_blank">Item Search</a>
     <div class="user-info">
       <span class="user-role-badge" :class="userData.role">{{ userData.role }}</span>
       <span class="user-name">{{ userData.username }}</span>
@@ -319,6 +320,14 @@
       <div class="form-field">
         <label>Item Category</label>
         <input type="text" v-model="f_itemCategory" placeholder="e.g. Accessories" />
+      </div>
+      <div class="form-field">
+        <label>Tags <span style="color:#64748b;font-weight:400">(comma-separated)</span></label>
+        <input type="text" v-model="f_itemTags" placeholder="e.g. fragile, priority, hazmat" />
+      </div>
+      <div class="form-field">
+        <label>URL <span style="color:#64748b;font-weight:400">(optional)</span></label>
+        <input type="url" v-model="f_itemUrl" placeholder="https://..." />
       </div>
       <div class="form-field">
         <label>Notes</label>

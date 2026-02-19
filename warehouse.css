@@ -55,6 +55,14 @@
       transition: color 0.15s, border-color 0.15s;
     }
     .btn-logout:hover { color: #e2e8f0; border-color: #64748b; }
+    .btn-search-page {
+      padding: 5px 12px; background: transparent; color: #94a3b8;
+      border: 1px solid #334155; border-radius: 6px;
+      font-family: inherit; font-size: 12px; font-weight: 600;
+      text-decoration: none; white-space: nowrap; flex-shrink: 0;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-search-page:hover { color: #e2e8f0; border-color: #64748b; }
 
     /* ── Search bar (inside header) ── */
     .search-bar { flex: 1; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; min-width: 0; }
