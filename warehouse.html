@@ -55,6 +55,7 @@
     <button class="btn-add-isle" id="btn-add-isle" onclick="activateDrawMode()">Add Isle</button>
     <button class="btn-add-zone" id="btn-add-zone" onclick="activateZoneMode()">Add Zone</button>
     <button class="btn-edit-warehouse" id="btn-edit-warehouse" onclick="activateEditMode()">Edit Warehouse</button>
+    <button class="btn-delete-entity" id="btn-delete-entity" onclick="deleteSelectedEntity()" style="display:none">&#x1F5D1; Delete Selected</button>
     <hr style="border:none;border-top:1px solid #eee;margin:4px 0;">
     <button class="btn-save-layout" onclick="exportLayout()">Save Layout</button>
     <button class="btn-load-layout" onclick="triggerImport()">Load Layout</button>
@@ -78,9 +79,15 @@
       <button class="modal-close" onclick="cancelIsleCreation()" title="Close">&#x2715;</button>
       <p class="modal-title">New Isle</p>
       <p class="modal-subtitle">Name this isle and set how many shelves each subsection will have.</p>
-      <div class="form-field">
-        <label>Isle Name <span style="color:#e53935">*</span></label>
-        <input type="text" id="isle-name-input" placeholder="e.g. Aisle 1, Electronics Row" />
+      <div class="two-col">
+        <div class="form-field" style="flex:0 0 80px">
+          <label>Row</label>
+          <input type="text" id="isle-row-input" placeholder="e.g. A" maxlength="10" />
+        </div>
+        <div class="form-field">
+          <label>Isle Name <span style="color:#e53935">*</span></label>
+          <input type="text" id="isle-name-input" placeholder="e.g. Aisle 1, Electronics Row" />
+        </div>
       </div>
       <div class="form-field">
         <label>Shelves per Subsection <span style="color:#888;font-weight:400">(max 26)</span></label>

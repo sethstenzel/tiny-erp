@@ -169,6 +169,10 @@
     function escHtml(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+    function buildIsleHeaderHtml(row, label, labelColor) {
+      const badge = row ? `<span class="isle-row-badge">${escHtml(row)}</span>` : '';
+      return `${badge}<span class="isle-label" style="color:${escHtml(labelColor)}">${escHtml(label)}</span>`;
+    }
     function closeAllModals() {
       ['modal-count','modal-subsections','modal-labels',
        'modal-subsection-select','modal-shelf-select','modal-add-shelf',
@@ -453,6 +457,7 @@
       selectZone(null);
       warehouseWrapper.classList.remove('edit-mode');
       document.getElementById('btn-edit-warehouse').classList.remove('active');
+      document.getElementById('btn-delete-entity').style.display = 'none';
       statusEl.innerHTML = 'Click "Add Isle" then<br>draw inside the warehouse.';
       removeEditHandles();
     }
@@ -463,6 +468,7 @@
       }
       selectedIsle = isle;
       if (isle && isle.element) isle.element.classList.add('isle-selected');
+      updateDeleteBtn();
     }
 
     function selectZone(zone) {
@@ -471,6 +477,12 @@
       }
       selectedZone = zone;
       if (zone && zone.element) zone.element.classList.add('zone-selected');
+      updateDeleteBtn();
+    }
+
+    function updateDeleteBtn() {
+      const btn = document.getElementById('btn-delete-entity');
+      if (btn) btn.style.display = (editMode && (selectedIsle || selectedZone)) ? '' : 'none';
     }
 
     let pendingDeleteEntity = null; // { entity, type }
@@ -788,12 +800,13 @@
       el.innerHTML=`<div class="isle-header"><span class="isle-label" style="color:${color}">…</span></div>`;
       warehouse.appendChild(el);
 
-      pendingIsle = { id, label:'', color, shelfColor:'#aaaaaa',
+      pendingIsle = { id, label:'', row:'', color, shelfColor:'#aaaaaa',
                       fillColor:'#ffffff', fillOpacity:0, labelColor:color, rotation:0,
                       position:{x,y}, dimensions:{width:w,height:h}, element:el,
                       shelfCount:1, shelfLabels:[], subsectionStart:1, subsectionCount:1,
                       facing:'right', subsections:[], createdAt:new Date().toISOString() };
 
+      document.getElementById('isle-row-input').value='';
       document.getElementById('isle-name-input').value='';
       document.getElementById('isle-name-input').style.borderColor='';
       document.getElementById('shelf-count-input').value=1;
@@ -821,9 +834,10 @@
       pendingIsle.shelfColor  = document.getElementById('shelf-color-input').value || '#aaaaaa';
       pendingIsle.fillColor   = document.getElementById('isle-fill-color').value || '#ffffff';
       pendingIsle.fillOpacity = parseInt(document.getElementById('isle-fill-opacity').value, 10) || 0;
+      pendingIsle.row         = document.getElementById('isle-row-input').value.trim();
       pendingIsle.labelColor  = document.getElementById('isle-label-color-input').value || pendingIsle.color;
-      const lblEl = pendingIsle.element.querySelector('.isle-label');
-      if (lblEl) { lblEl.textContent = name; lblEl.style.color = pendingIsle.labelColor; }
+      const isleHeader = pendingIsle.element.querySelector('.isle-header');
+      if (isleHeader) isleHeader.innerHTML = buildIsleHeaderHtml(pendingIsle.row, name, pendingIsle.labelColor);
 
       hide('modal-count');
       document.getElementById('subsection-config-title').textContent = `Subsection Setup — ${name}`;
@@ -1441,6 +1455,7 @@
       if (!selectedIsle) return;
       // Snapshot all data needed to reconstruct — items excluded intentionally
       copiedIsle = {
+        row:             selectedIsle.row || '',
         color:           selectedIsle.color,
         shelfColor:      selectedIsle.shelfColor,
         fillColor:       selectedIsle.fillColor   || '#ffffff',
@@ -1498,13 +1513,13 @@
         transform: `rotate(${src.rotation}deg)`,
       });
       el.dataset.isleId = id;
-      el.innerHTML = `<div class="isle-header"><span class="isle-label" style="color:${escHtml(src.labelColor)}">${escHtml(name)}</span></div>`;
+      el.innerHTML = `<div class="isle-header">${buildIsleHeaderHtml(src.row || '', name, src.labelColor)}</div>`;
 
       const body = document.createElement('div');
       body.className = 'isle-body';
 
       const isle = {
-        id, label: name,
+        id, label: name, row: src.row || '',
         color: src.color, shelfColor: src.shelfColor,
         fillColor: src.fillColor, fillOpacity: src.fillOpacity,
         labelColor: src.labelColor, rotation: src.rotation,
@@ -1617,7 +1632,7 @@
       wh.background = warehouseBg;
       wh.counters   = { isleCounter, subsectionCounter, shelfCounter, itemCounter, zoneCounter };
       wh.isles = isles.map(isle => ({
-        id: isle.id, label: isle.label, color: isle.color, shelfColor: isle.shelfColor,
+        id: isle.id, label: isle.label, row: isle.row || '', color: isle.color, shelfColor: isle.shelfColor,
         fillColor: isle.fillColor || '#ffffff',
         fillOpacity: isle.fillOpacity != null ? isle.fillOpacity : 0,
         labelColor: isle.labelColor || isle.color,
@@ -1876,6 +1891,7 @@
     function rebuildIsleFromData(isleData) {
       const { id, label, color, shelfColor, facing, position, dimensions,
               shelfLabels, subsectionStart, subsectionCount, createdAt } = isleData;
+      const row         = isleData.row         || '';
       const sc          = shelfColor || '#aaaaaa';
       const fillColor   = isleData.fillColor   || '#ffffff';
       const fillOpacity = isleData.fillOpacity != null ? isleData.fillOpacity : 0;
@@ -1891,13 +1907,13 @@
         transform: `rotate(${rotation}deg)`,
       });
       el.dataset.isleId = id;
-      el.innerHTML = `<div class="isle-header"><span class="isle-label" style="color:${escHtml(labelColor)}">${escHtml(label)}</span></div>`;
+      el.innerHTML = `<div class="isle-header">${buildIsleHeaderHtml(row, label, labelColor)}</div>`;
 
       const body = document.createElement('div');
       body.className = 'isle-body';
 
       const isle = {
-        id, label, color, shelfColor: sc, fillColor, fillOpacity, labelColor, rotation, facing,
+        id, label, row, color, shelfColor: sc, fillColor, fillOpacity, labelColor, rotation, facing,
         position: { ...position }, dimensions: { ...dimensions },
         element: el, shelfCount: shelfLabels.length, shelfLabels: [...shelfLabels],
         subsectionStart, subsectionCount, subsections: [], createdAt,
