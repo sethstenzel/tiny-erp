@@ -101,6 +101,64 @@
     <input v-if="isAdmin" type="file" ref="bgFileInput" accept="image/png,image/jpeg" style="display:none" @change="handleBgFile">
     <div class="status-msg">{{ statusText }}</div>
     <div class="isle-count">{{ isleCountText }}</div>
+
+    <!-- Inspector panel — shown when an isle or zone is selected in edit mode -->
+    <template v-if="insp_show">
+      <hr style="border:none;border-top:1px solid #334155;margin:2px 0;">
+      <div class="insp-panel">
+        <div class="insp-title">{{ insp_type === 'isle' ? 'Isle' : 'Zone' }}</div>
+        <div class="insp-field">
+          <label class="insp-lbl">Name</label>
+          <input class="insp-input" type="text" v-model="insp_name"
+                 :style="insp_nameError ? 'border-color:#ef4444' : ''"
+                 @keydown.enter="applyInspectorLabel" />
+        </div>
+        <div class="insp-field" v-if="insp_type === 'isle'">
+          <label class="insp-lbl">Row</label>
+          <input class="insp-input" type="text" v-model="insp_row"
+                 @keydown.enter="applyInspectorLabel" />
+        </div>
+        <div class="insp-field">
+          <label class="insp-lbl">Border color</label>
+          <input type="color" v-model="insp_color" class="insp-color-pick"
+                 @change="saveLayout" />
+        </div>
+        <div class="insp-field">
+          <label class="insp-lbl">Label color</label>
+          <input type="color" v-model="insp_labelColor" class="insp-color-pick"
+                 @change="saveLayout" />
+        </div>
+        <div class="insp-field" v-if="insp_type === 'isle'">
+          <label class="insp-lbl">Fill color</label>
+          <input type="color" v-model="insp_fillColor" class="insp-color-pick"
+                 @change="saveLayout" />
+        </div>
+        <div class="insp-field" v-if="insp_type === 'isle'">
+          <label class="insp-lbl">Shelf Order</label>
+          <div class="insp-facing-group">
+            <button type="button" class="facing-opt" :class="{ selected: insp_shelfOrder === 'right' }"
+                    @click="applyShelfOrder('right')">Left → Right</button>
+            <button type="button" class="facing-opt" :class="{ selected: insp_shelfOrder === 'left' }"
+                    @click="applyShelfOrder('left')">Right → Left</button>
+          </div>
+        </div>
+        <div class="insp-field">
+          <label class="insp-lbl">Opacity <span style="color:#94a3b8;font-weight:400;">{{ insp_fillOpacity }}%</span></label>
+          <input type="range" v-model.number="insp_fillOpacity" min="0" max="100"
+                 class="insp-range" @change="saveLayout" />
+        </div>
+        <label v-if="insp_type === 'zone'" class="insp-flag-label">
+          <input type="checkbox" v-model="insp_hideLabel" class="insp-flag-cb" @change="saveLayout" />
+          Hide label
+        </label>
+        <label v-if="insp_type === 'zone'" class="insp-flag-label">
+          <input type="checkbox" v-model="insp_itemFree" class="insp-flag-cb" @change="saveLayout" />
+          Item-free
+        </label>
+        <button class="btn-insp-save" @click="applyInspectorLabel">Save Name</button>
+      </div>
+    </template>
+
     <div style="display:flex;gap:5px;margin-top:2px;">
       <button @click="zoomOut" title="Zoom Out" style="flex:1;padding:7px 4px;border:1px solid #334155;border-radius:6px;background:#0f172a;cursor:pointer;font-size:18px;font-weight:700;color:#94a3b8;line-height:1;">−</button>
       <button @click="resetView" title="Reset View" style="flex:1;padding:7px 4px;border:1px solid #334155;border-radius:6px;background:#0f172a;cursor:pointer;font-size:13px;font-weight:700;color:#94a3b8;line-height:1;">⌂</button>
@@ -167,12 +225,12 @@
         <input type="range" v-model.number="f_isleFillOpacity" min="0" max="100" style="width:100%;margin-top:4px;">
       </div>
       <div class="form-field">
-        <label>Isle Facing</label>
+        <label>Shelf Order</label>
         <div class="facing-group">
           <button type="button" class="facing-opt" :class="{ selected: f_isleFacing === 'right' }"
-                  @click="f_isleFacing = 'right'">← Right-facing<br><span style="font-size:10px;font-weight:400;">First shelf on left</span></button>
+                  @click="f_isleFacing = 'right'">Left → Right<br><span style="font-size:10px;font-weight:400;">First shelf on the left</span></button>
           <button type="button" class="facing-opt" :class="{ selected: f_isleFacing === 'left' }"
-                  @click="f_isleFacing = 'left'">Left-facing →<br><span style="font-size:10px;font-weight:400;">First shelf on right</span></button>
+                  @click="f_isleFacing = 'left'">Right → Left<br><span style="font-size:10px;font-weight:400;">First shelf on the right</span></button>
         </div>
       </div>
       <div class="modal-actions">
@@ -232,12 +290,42 @@
       <p class="modal-subtitle">Click a subsection to manage its shelves.</p>
       <div class="select-list">
         <div v-for="sub in mc_subSelList" :key="sub.id" class="select-row" @click="selectSubsectionFromList(sub)">
-          <span class="row-name">Subsection {{ sub.number }}</span>
+          <span class="row-name">{{ sub.name || 'Subsection ' + sub.number }}</span>
           <span class="row-meta">{{ sub.shelves.length }} shelves · {{ sub.totalItems }} items</span>
         </div>
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" @click="closeAllModals">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Subsection actions ══ -->
+  <div class="modal-overlay" v-show="m_subAct">
+    <div class="modal">
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_subActTitle }}</p>
+      <p class="modal-subtitle">{{ mc_subActSub }}</p>
+      <div class="form-field" v-if="isAdmin || f_subName" style="margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label style="margin:0;font-size:12px;color:#94a3b8;font-weight:500;">Subsection Name</label>
+          <button v-if="isAdmin" class="btn-sub-unlock" @click="unlockSubName"
+                  :disabled="!subNameLocked"
+                  :title="subNameLocked ? 'Click to unlock and edit name' : 'Editing enabled'">
+            {{ subNameLocked ? '🔒' : '🔓' }}
+          </button>
+        </div>
+        <input type="text" v-model="f_subName" :disabled="subNameLocked"
+               :style="subNameError ? 'border-color:#e53935' : ''"
+               placeholder="Optional name..."
+               @keydown.enter="saveSubName" ref="subNameInput" />
+      </div>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button class="btn-cancel" @click="backFromSubAct">← Back</button>
+        <div style="display:flex;gap:8px;">
+          <button v-if="isAdmin && !subNameLocked" class="btn-confirm" @click="saveSubName">Save Name</button>
+          <button class="btn-confirm" @click="proceedToShelves">View Shelves →</button>
+        </div>
       </div>
     </div>
   </div>
@@ -285,6 +373,21 @@
       <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
       <p class="modal-title">{{ mc_shelfActTitle }}</p>
       <p class="modal-subtitle">{{ mc_shelfActSub }}</p>
+      <div class="form-field" style="margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <label style="margin:0;font-size:12px;color:#94a3b8;font-weight:500;">Shelf Label</label>
+          <button v-if="isAdmin" class="btn-sub-unlock" @click="unlockShelfName"
+                  :disabled="!shelfNameLocked"
+                  :title="shelfNameLocked ? 'Click to unlock and edit label' : 'Editing enabled'">
+            {{ shelfNameLocked ? '🔒' : '🔓' }}
+          </button>
+        </div>
+        <input type="text" v-model="f_shelfActName" :disabled="shelfNameLocked"
+               :style="shelfActNameError ? 'border-color:#e53935' : ''"
+               @keydown.enter="saveShelfName" ref="shelfNameInput" />
+        <button v-if="isAdmin && !shelfNameLocked" class="btn-confirm"
+                style="margin-top:6px;width:100%;" @click="saveShelfName">Save Label</button>
+      </div>
       <div class="action-btn-group">
         <button class="action-btn add" @click="openAddItem">
           <span class="action-icon">＋</span>Add Item
@@ -371,6 +474,16 @@
         <label>Fill Opacity <span style="font-weight:400;color:#888;">{{ f_zoneFillOpacity }}%</span></label>
         <input type="range" v-model.number="f_zoneFillOpacity" min="0" max="100" style="width:100%;margin-top:4px;">
       </div>
+      <div class="two-col">
+        <label class="zone-flag-label">
+          <input type="checkbox" v-model="f_zoneHideLabel" class="zone-flag-cb" />
+          Hide label
+        </label>
+        <label class="zone-flag-label">
+          <input type="checkbox" v-model="f_zoneItemFree" class="zone-flag-cb" />
+          Item-free
+        </label>
+      </div>
       <div class="modal-actions">
         <button class="btn-cancel" @click="cancelZoneCreation">Cancel</button>
         <button class="btn-confirm" @click="confirmZone">Create Zone</button>
@@ -408,6 +521,25 @@
     </div>
   </div>
 
+  <!-- ══ Paste zone ══ -->
+  <div class="modal-overlay" v-show="m_pasteZone">
+    <div class="modal">
+      <button class="modal-close" @click="m_pasteZone = false" title="Close">&#x2715;</button>
+      <p class="modal-title">Paste Zone</p>
+      <p class="modal-subtitle">{{ mc_pasteZoneSub }}</p>
+      <div class="form-field">
+        <label>New Zone Label <span style="color:#e53935">*</span></label>
+        <input type="text" v-model="f_pasteZoneName" placeholder="Enter a label for the pasted zone"
+               :style="pasteZoneNameError ? 'border-color:#e53935' : ''" ref="pasteZoneInput"
+               @keydown.enter="pasteZone" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="m_pasteZone = false">Cancel</button>
+        <button class="btn-confirm" @click="pasteZone">Paste</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ Delete isle / zone ══ -->
   <div class="modal-overlay" v-show="m_delEnt">
     <div class="modal">
@@ -439,7 +571,53 @@
       <div class="selected-count">{{ mc_selCount }} selected</div>
       <div class="modal-actions">
         <button class="btn-cancel" @click="backToShelfActions">← Back</button>
+        <button class="btn-move" :disabled="mc_selCount === 0" @click="openMoveItems">Move Selected</button>
         <button class="btn-danger" :disabled="mc_selCount === 0" @click="confirmRemoveItems">Remove Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Move items: destination picker ══ -->
+  <div class="modal-overlay" v-show="m_moveDest">
+    <div class="modal">
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">Move {{ mc_selCount }} Item{{ mc_selCount !== 1 ? 's' : '' }}</p>
+      <p class="modal-subtitle" style="margin-bottom:4px">From: {{ mv_srcLabel }}</p>
+      <p class="modal-subtitle" v-if="mv_step === 'isle'">Select destination isle</p>
+      <p class="modal-subtitle" v-if="mv_step === 'sub'">Select destination subsection</p>
+      <p class="modal-subtitle" v-if="mv_step === 'shelf'">Select destination shelf</p>
+
+      <!-- Step 1: isle list -->
+      <div class="select-list" v-if="mv_step === 'isle'">
+        <p v-if="mv_isles.length === 0" class="no-items-msg">No isles in this warehouse.</p>
+        <div v-for="isle in mv_isles" :key="isle.id" class="select-row" @click="mvPickIsle(isle)">
+          <span class="row-name">{{ isle.label }}</span>
+          <span class="row-meta" v-if="isle.row">Row {{ isle.row }}</span>
+        </div>
+      </div>
+
+      <!-- Step 2: subsection list -->
+      <div class="select-list" v-if="mv_step === 'sub'">
+        <div v-for="sub in mv_subs" :key="sub.id" class="select-row" @click="mvPickSub(sub)">
+          <span class="row-name">Sub {{ sub.number }}</span>
+          <span class="row-meta">{{ sub.shelves.length }} shelf{{ sub.shelves.length !== 1 ? 'ves' : '' }}</span>
+        </div>
+      </div>
+
+      <!-- Step 3: shelf list -->
+      <div class="select-list" v-if="mv_step === 'shelf'">
+        <div v-for="shelf in mv_shelves" :key="shelf.id"
+             class="select-row" :class="{ 'move-dest-disabled': mv_isSrcShelf(shelf) }"
+             @click="mvPickShelf(shelf)">
+          <span class="row-name">{{ shelf.label }}</span>
+          <span class="row-meta">
+            {{ mv_isSrcShelf(shelf) ? 'current shelf' : shelf.items.length + ' item' + (shelf.items.length !== 1 ? 's' : '') }}
+          </span>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="mvBack">← Back</button>
       </div>
     </div>
   </div>

@@ -259,6 +259,7 @@
     }
     .subsection:hover { background: rgba(255,255,255,0.55); }
     .sub-number { font-size: 8px; font-weight: 700; color: rgba(0,0,0,0.3); padding: 1px 3px; flex-shrink: 0; line-height: 1; }
+    .sub-name-label { font-size: 7px; font-weight: 600; color: rgba(0,0,0,0.45); padding: 0 3px 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
     .sub-shelves { flex: 1; display: flex; gap: 1px; padding: 1px 2px 2px; min-height: 0; overflow: hidden; }
     .shelf-slot {
       flex: 1; border: 1px solid rgba(0,0,0,0.2); border-radius: 1px;
@@ -297,7 +298,7 @@
       background: #1e293b; border: 1px solid #334155;
       border-radius: 14px; padding: 16px 13px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
-      display: flex; flex-direction: column; gap: 8px; min-width: 148px; z-index: 100;
+      display: flex; flex-direction: column; gap: 8px; min-width: 170px; z-index: 100;
     }
     .floating-menu.collapsed { transform: translateY(-50%) translateX(calc(100% + 16px)); }
 
@@ -351,6 +352,58 @@
       font-size: 10px; color: #475569; text-align: center;
       border-top: 1px solid #334155; padding-top: 6px; font-weight: 600;
     }
+
+    /* ── Inspector panel ── */
+    .insp-panel { display: flex; flex-direction: column; gap: 6px; }
+    .insp-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
+      text-transform: uppercase; color: #60a5fa; text-align: center; margin-bottom: 2px;
+    }
+    .insp-field { display: flex; flex-direction: column; gap: 2px; }
+    .insp-lbl { font-size: 10px; font-weight: 600; color: #94a3b8; }
+    .insp-input {
+      padding: 5px 7px; border: 1px solid #334155; border-radius: 6px;
+      background: #0f172a; color: #e2e8f0; font-size: 12px; font-family: inherit;
+      outline: none; width: 100%; box-sizing: border-box;
+    }
+    .insp-input:focus { border-color: #3b82f6; }
+    .insp-color-pick {
+      width: 100%; height: 28px; padding: 2px; border: 1px solid #334155;
+      border-radius: 6px; background: #0f172a; cursor: pointer; box-sizing: border-box;
+    }
+    .insp-range { width: 100%; accent-color: #3b82f6; margin-top: 2px; }
+    .btn-insp-save {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      padding: 7px 10px; border-radius: 7px;
+      font-size: 11px; width: 100%; justify-content: center;
+    }
+    .btn-insp-save:hover { filter: brightness(1.15); }
+    .insp-flag-label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 600; color: #94a3b8; cursor: pointer; user-select: none;
+    }
+    .insp-flag-cb { width: 14px; height: 14px; cursor: pointer; accent-color: #3b82f6; }
+    .insp-facing-group { display: flex; border: 1px solid #334155; border-radius: 6px; overflow: hidden; }
+    .insp-facing-group .facing-opt { background: #0f172a; color: #64748b; font-size: 10px; padding: 5px 4px; }
+    .insp-facing-group .facing-opt + .facing-opt { border-left: 1px solid #334155; }
+    .insp-facing-group .facing-opt.selected { background: #3b82f6; color: #fff; }
+
+    /* Zone creation modal flag checkboxes */
+    .zone-flag-label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 500; color: #374151; cursor: pointer; user-select: none;
+    }
+    .zone-flag-cb { width: 15px; height: 15px; cursor: pointer; accent-color: #3b82f6; }
+
+    /* Subsection name lock/unlock button */
+    .btn-sub-unlock {
+      background: none; border: none; cursor: pointer;
+      padding: 0 2px; font-size: 14px; line-height: 1;
+      opacity: 0.7; transition: opacity 0.15s;
+    }
+    .btn-sub-unlock:hover:not(:disabled) { opacity: 1; }
+    .btn-sub-unlock:disabled { cursor: default; opacity: 0.35; }
+
     .zoom-controls { display: flex; gap: 4px; margin-top: 2px; }
     .zoom-controls button {
       flex: 1; padding: 7px 4px; border: 1px solid #334155; border-radius: 7px;
@@ -394,6 +447,10 @@
     .btn-confirm:hover { filter: brightness(1.1); }
     .btn-danger  { background: #ef4444; color: white; }
     .btn-danger:hover  { filter: brightness(1.1); }
+    .btn-move    { background: #8b5cf6; color: white; }
+    .btn-move:hover:not(:disabled) { filter: brightness(1.1); }
+    .btn-move:disabled, .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+    .select-row.move-dest-disabled { opacity: 0.4; pointer-events: none; }
 
     /* ── Form fields ── */
     .form-field { display: flex; flex-direction: column; gap: 5px; }

@@ -321,6 +321,63 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
     return {"id": new_id}
 
 
+class IsleRelabelBody(BaseModel):
+    isle_label: str
+    isle_row: str
+
+
+@app.patch("/api/items/isle/{isle_id}/label")
+def relabel_isle_items(isle_id: int, body: IsleRelabelBody, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    conn.execute(
+        "UPDATE items SET isle_label=?, isle_row=? WHERE isle_id=?",
+        (body.isle_label, body.isle_row, isle_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+class MoveItemBody(BaseModel):
+    location_type: str = "shelf"
+    warehouse_id: Optional[int] = None
+    warehouse_name: str = ""
+    isle_id: Optional[int] = None
+    isle_label: str = ""
+    isle_row: str = ""
+    subsection_id: Optional[int] = None
+    subsection_number: Optional[int] = None
+    shelf_id: Optional[int] = None
+    shelf_label: str = ""
+    zone_id: Optional[int] = None
+    zone_label: str = ""
+
+
+@app.patch("/api/items/{item_db_id}/location")
+def move_item(item_db_id: int, body: MoveItemBody, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    conn.execute(
+        """UPDATE items SET
+            location_type=?, warehouse_id=?, warehouse_name=?,
+            isle_id=?, isle_label=?, isle_row=?,
+            subsection_id=?, subsection_number=?,
+            shelf_id=?, shelf_label=?,
+            zone_id=?, zone_label=?
+           WHERE id=?""",
+        (
+            body.location_type, body.warehouse_id, body.warehouse_name,
+            body.isle_id, body.isle_label, body.isle_row,
+            body.subsection_id, body.subsection_number,
+            body.shelf_id, body.shelf_label,
+            body.zone_id, body.zone_label,
+            item_db_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 @app.delete("/api/items/{item_db_id}")
 def delete_item(item_db_id: int, user: dict = Depends(get_current_user)):
     conn = get_db()

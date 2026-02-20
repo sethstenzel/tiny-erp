@@ -7,7 +7,16 @@
       "Bash(uv add:*)",
       "Bash(uv run python:*)",
       "Bash(node -e:*)",
-      "Bash(sqlite3:*)"
+      "Bash(sqlite3:*)",
+      "Bash(python -c:*)",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(ls:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"taskkill /PID 52504 /F\")",
+      "Bash(cmd /c \"netstat -ano | findstr :8000\")",
+      "Bash(cmd /c \"netsh int ipv4 show excludedportrange protocol=tcp\")",
+      "Bash(echo:*)"
     ]
   }
 }

@@ -19,9 +19,26 @@ createApp({
       m_confDel:   false,
       m_zone:      false,
       m_pasteIsle: false,
+      m_pasteZone: false,
       m_delEnt:    false,
       m_zoneAct:   false,
       m_zoneItems: false,
+      m_moveDest:  false,
+      m_subAct:    false,
+
+      // Inspector panel (floating menu)
+      insp_show:        false,
+      insp_type:        '',      // 'isle' | 'zone'
+      insp_name:        '',
+      insp_row:         '',
+      insp_color:       '#4285f4',
+      insp_labelColor:  '#4285f4',
+      insp_fillColor:   '#ffffff',
+      insp_fillOpacity: 0,
+      insp_hideLabel:   false,
+      insp_itemFree:    false,
+      insp_nameError:   false,
+      insp_shelfOrder:  'right',
 
       // Form: Isle step 1
       f_isleRow:        '',
@@ -42,10 +59,12 @@ createApp({
       f_shelfLabelsList: [], // [{label:'A'}, ...]
 
       // Form: Zone
-      f_zoneLabel:      '',
-      f_zoneColor:      '#ff0000',
-      f_zoneNameColor:  '#444444',
+      f_zoneLabel:       '',
+      f_zoneColor:       '#ff0000',
+      f_zoneNameColor:   '#444444',
       f_zoneFillOpacity: 18,
+      f_zoneHideLabel:   false,
+      f_zoneItemFree:    false,
 
       // Form: misc
       f_addShelfName:  '',
@@ -55,16 +74,28 @@ createApp({
       f_itemNotes:     '',
       f_itemTags:      '',
       f_itemUrl:       '',
-      f_pasteIsleName: '',
+      f_pasteIsleName:  '',
+      f_pasteZoneName:  '',
+      f_subName:        '',
+      f_shelfActName:   '',
 
       // Validation error flags
-      isleNameError:     false,
-      addShelfNameError: false,
-      itemIdError:       false,
-      zoneLabelError:    false,
+      isleNameError:      false,
+      addShelfNameError:  false,
+      itemIdError:        false,
+      zoneLabelError:     false,
       pasteIsleNameError: false,
+      pasteZoneNameError: false,
+      subNameError:       false,
+      shelfActNameError:  false,
+
+      // Name lock state
+      subNameLocked:   true,
+      shelfNameLocked: true,
 
       // Modal content (dynamic)
+      mc_subActTitle:    '',
+      mc_subActSub:      '',
       mc_subConfigTitle: 'Subsection Setup',
       mc_labelsTitle:    'Label Shelves',
       mc_subSelTitle:    'Select a Subsection',
@@ -90,6 +121,14 @@ createApp({
       mc_selZoneItemIds: [],
       mc_zoneSelCount:   0,
       mc_pasteIsleSub:   '',
+      mc_pasteZoneSub:   '',
+
+      // Move items
+      mv_step:    'isle',   // 'isle' | 'sub' | 'shelf'
+      mv_srcLabel: '',
+      mv_isles:   [],
+      mv_subs:    [],
+      mv_shelves: [],
 
       // Search
       searchQuery:      '',
@@ -159,6 +198,47 @@ createApp({
       if (!this._pz) return;
       this._pz.fillOpacity = v;
       this._applyZoneFill(this._pz.element, this._pz.color, v);
+    },
+
+    // Inspector panel — live DOM updates when color/opacity fields change
+    insp_color(v) {
+      if (!this._inspEntity) return;
+      this._inspEntity.color = v;
+      this._inspEntity.element.style.borderColor = v;
+      if (this.insp_type === 'zone') {
+        this._applyZoneFill(this._inspEntity.element, v, this._inspEntity.fillOpacity);
+      }
+    },
+    insp_labelColor(v) {
+      if (!this._inspEntity) return;
+      this._inspEntity.labelColor = v;
+      const sel = this.insp_type === 'isle' ? '.isle-label' : '.zone-label';
+      const lbl = this._inspEntity.element.querySelector(sel);
+      if (lbl) lbl.style.color = v;
+    },
+    insp_fillColor(v) {
+      if (!this._inspEntity || this.insp_type !== 'isle') return;
+      this._inspEntity.fillColor = v;
+      this._applyIsleFill(this._inspEntity.element, v, this._inspEntity.fillOpacity);
+    },
+    insp_fillOpacity(v) {
+      if (!this._inspEntity) return;
+      this._inspEntity.fillOpacity = v;
+      if (this.insp_type === 'isle') {
+        this._applyIsleFill(this._inspEntity.element, this._inspEntity.fillColor || '#ffffff', v);
+      } else {
+        this._applyZoneFill(this._inspEntity.element, this._inspEntity.color, v);
+      }
+    },
+    insp_hideLabel(v) {
+      if (!this._inspEntity) return;
+      this._inspEntity.hideLabel = v;
+      const lbl = this._inspEntity.element.querySelector('.zone-label');
+      if (lbl) lbl.style.display = v ? 'none' : '';
+    },
+    insp_itemFree(v) {
+      if (!this._inspEntity) return;
+      this._inspEntity.itemFree = v;
     },
   },
 
@@ -250,6 +330,7 @@ createApp({
       this._selIsles  = [];   // multi-selection arrays
       this._selZones  = [];
       this._copiedIsle = null;
+      this._copiedZone = null;
 
       // Multi-drag
       this._isDragMulti = false;
@@ -263,6 +344,18 @@ createApp({
 
       this._selItemIds     = new Set();
       this._selZoneItemIds = new Set();
+
+      // Move items
+      this._itemsToMove = [];
+      this._mvSrcIsle = null; this._mvSrcSub = null; this._mvSrcShelf = null;
+      this._mvDestIsle = null; this._mvDestSub = null;
+
+      // Edit isle properties
+      this._editingIsle = null;
+
+      // Inspector panel
+      this._inspEntity = null;
+
       this._warehouseBg    = null;
 
       this._SNAP = 12;
@@ -325,7 +418,7 @@ createApp({
         }
         // Edit mode: rubber-band selection on empty warehouse space
         if (this._editMode && e.button === 0 && !e.target.closest('.isle') && !e.target.closest('.zone') && !handle) {
-          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) this._clearAllSelection();
+          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) { this._clearAllSelection(); this._closeInspector(); }
           this._isRubberBand = true;
           const rp = this._relPos(e);
           this._rbStartX = rp.x; this._rbStartY = rp.y;
@@ -694,6 +787,7 @@ createApp({
       this._isDragMulti = false; this._multiDragStartPositions = [];
       this._isRubberBand = false;
       this._clearAllSelection();
+      this._closeInspector();
       this.showDelEntBtn = false;
       this.statusText = 'Click "Add Isle" then draw inside the warehouse.';
       this._removeAllHandles();
@@ -841,11 +935,7 @@ createApp({
         const dy = (e.clientY - this._dragMultiSMY) / this._currentZoom;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._isleDragMoved = true, this._zoneDragMoved = true;
         for (const { entity, type, sx, sy } of this._multiDragStartPositions) {
-          let nx = sx + dx, ny = sy + dy;
-          if (type === 'isle') {
-            nx = this._clamp(nx, 0, this._wh.clientWidth  - entity.dimensions.width);
-            ny = this._clamp(ny, 0, this._wh.clientHeight - entity.dimensions.height);
-          }
+          const nx = sx + dx, ny = sy + dy;
           entity.position.x = nx; entity.position.y = ny;
           entity.element.style.left = nx + 'px'; entity.element.style.top = ny + 'px';
           if (this._editMode) this._updateHandles(entity, type);
@@ -855,9 +945,8 @@ createApp({
         const dx = (e.clientX - this._isleSMX) / this._currentZoom;
         const dy = (e.clientY - this._isleSMY) / this._currentZoom;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._isleDragMoved = true;
-        const nx = this._clamp(this._isleSX + dx, 0, this._wh.clientWidth  - this._dragIsle.dimensions.width);
-        const ny = this._clamp(this._isleSY + dy, 0, this._wh.clientHeight - this._dragIsle.dimensions.height);
-        const sn = this._snapIsleMove(this._dragIsle, nx, ny);
+        const rx = this._isleSX + dx, ry = this._isleSY + dy;
+        const sn = (e.ctrlKey || e.metaKey) ? { x: rx, y: ry } : this._snapIsleMove(this._dragIsle, rx, ry);
         this._dragIsle.position.x = sn.x; this._dragIsle.position.y = sn.y;
         this._dragIsle.element.style.left = sn.x + 'px'; this._dragIsle.element.style.top = sn.y + 'px';
         if (this._editMode) this._updateHandles(this._dragIsle, 'isle');
@@ -866,7 +955,8 @@ createApp({
         const dx = (e.clientX - this._zoneSMX) / this._currentZoom;
         const dy = (e.clientY - this._zoneSMY) / this._currentZoom;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._zoneDragMoved = true;
-        const sn = this._snapZoneMove(this._dragZone, this._zoneSX + dx, this._zoneSY + dy);
+        const rx = this._zoneSX + dx, ry = this._zoneSY + dy;
+        const sn = (e.ctrlKey || e.metaKey) ? { x: rx, y: ry } : this._snapZoneMove(this._dragZone, rx, ry);
         this._dragZone.position.x = sn.x; this._dragZone.position.y = sn.y;
         this._dragZone.element.style.left = sn.x + 'px'; this._dragZone.element.style.top = sn.y + 'px';
         if (this._editMode) this._updateHandles(this._dragZone, 'zone');
@@ -938,9 +1028,11 @@ createApp({
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         if (this._editMode && this._selIsle) { this._copyIsle(); e.preventDefault(); }
+        else if (this._editMode && this._selZone) { this._copyZone(); e.preventDefault(); }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         if (this._editMode && this._copiedIsle) { this._openPasteModal(); e.preventDefault(); }
+        else if (this._editMode && this._copiedZone) { this._openPasteZoneModal(); e.preventDefault(); }
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && this._editMode) {
         if (this._selIsle || this._selZone) { this.deleteSelectedEntity(); e.preventDefault(); }
@@ -963,10 +1055,12 @@ createApp({
       el.appendChild(lblEl);
       this._wh.appendChild(el);
       this._pz = { id, label:'', color, fillOpacity:18, labelColor:'#444444', rotation:0,
+                   hideLabel:false, itemFree:false,
                    position:{x,y}, dimensions:{width:w,height:h}, items:[], element:el,
                    createdAt: new Date().toISOString() };
       this.f_zoneLabel = ''; this.f_zoneColor = color;
       this.f_zoneNameColor = '#444444'; this.f_zoneFillOpacity = 18;
+      this.f_zoneHideLabel = false; this.f_zoneItemFree = false;
       this.zoneLabelError = false;
       this.m_zone = true;
       this.$nextTick(() => this.$refs.zoneLabelInput?.focus());
@@ -976,14 +1070,17 @@ createApp({
       const label = this.f_zoneLabel.trim();
       if (!label) { this.zoneLabelError = true; return; }
       this.zoneLabelError = false;
-      this._pz.label      = label;
-      this._pz.color      = this.f_zoneColor;
+      this._pz.label       = label;
+      this._pz.color       = this.f_zoneColor;
       this._pz.fillOpacity = this.f_zoneFillOpacity;
       this._pz.labelColor  = this.f_zoneNameColor;
+      this._pz.hideLabel   = this.f_zoneHideLabel;
+      this._pz.itemFree    = this.f_zoneItemFree;
       this._pz.element.style.borderColor = this.f_zoneColor;
       this._applyZoneFill(this._pz.element, this.f_zoneColor, this.f_zoneFillOpacity);
       const lblEl = this._pz.element.querySelector('.zone-label');
       lblEl.textContent = label; lblEl.style.color = this.f_zoneNameColor;
+      if (this.f_zoneHideLabel) lblEl.style.display = 'none';
       this._zones.push(this._pz);
       this._attachZoneHandlers(this._pz);
       this.statusText = `Zone "${label}" added.`;
@@ -1024,7 +1121,11 @@ createApp({
         }
       });
       zone.element.addEventListener('click', (e) => {
-        if (this._editMode) return;
+        if (this._editMode) {
+          if (!this._zoneDragMoved) this._openInspector(zone, 'zone');
+          return;
+        }
+        if (zone.itemFree) return;
         e.stopPropagation();
         this._openZoneActions(zone);
       });
@@ -1140,15 +1241,14 @@ createApp({
         }
         subEl.appendChild(shelvesDiv);
 
-        const subObj = { id: subId, isleId, number: num, element: subEl, shelves };
+        const subObj = { id: subId, isleId, number: num, name: '', element: subEl, shelves };
         this._pi.subsections.push(subObj);
 
         subEl.addEventListener('click', (e) => {
           e.stopPropagation();
           if (this._drawMode || this._editMode || this._isleDragMoved) return;
           this._ai   = this._isles.find(i => i.id === isleId);
-          this._asub = subObj;
-          this._openShelfSelect(subObj);
+          this._openSubsectionActions(subObj);
         });
 
         body.appendChild(subEl);
@@ -1192,11 +1292,14 @@ createApp({
         }
       });
       isle.element.addEventListener('click', () => {
-        if (this._drawMode || this._editMode || this._isleDragMoved) return;
+        if (this._drawMode) return;
+        if (this._editMode) {
+          if (!this._isleDragMoved) this._openInspector(isle, 'isle');
+          return;
+        }
         this._ai = isle;
         if (isle.subsections.length === 1) {
-          this._asub = isle.subsections[0];
-          this._openShelfSelect(this._asub);
+          this._openSubsectionActions(isle.subsections[0]);
         } else {
           this._openSubsectionSelect(isle);
         }
@@ -1215,19 +1318,76 @@ createApp({
     },
 
     selectSubsectionFromList(sub) {
-      this._asub = sub;
       this.m_subSel = false;
-      this._openShelfSelect(sub);
+      this._openSubsectionActions(sub);
     },
 
     backToSubsectionSelect() {
       this.m_shelfSel = false;
-      if (this._ai && this._ai.subsections.length === 1) this.closeAllModals();
-      else if (this._ai) this._openSubsectionSelect(this._ai);
+      if (this._asub) this._openSubsectionActions(this._asub);
+      else this.closeAllModals();
+    },
+
+    _openSubsectionActions(sub) {
+      this._asub = sub;
+      const isle = this._ai;
+      const totalItems = sub.shelves.reduce((n, s) => n + s.items.length, 0);
+      this.mc_subActTitle = isle
+        ? `${isle.label} › ${sub.name || 'Sub ' + sub.number}`
+        : `Sub ${sub.number}`;
+      this.mc_subActSub = `${sub.shelves.length} shelf${sub.shelves.length !== 1 ? 'ves' : ''} · ${totalItems} item${totalItems !== 1 ? 's' : ''}`;
+      this.f_subName     = sub.name || '';
+      this.subNameLocked = true;
+      this.subNameError  = false;
+      this.m_subAct = true;
+    },
+
+    unlockSubName() {
+      this.subNameLocked = false;
+      this.$nextTick(() => this.$refs.subNameInput?.focus());
+    },
+
+    saveSubName() {
+      const name = this.f_subName.trim();
+      const sub  = this._asub;
+      if (!sub) return;
+      sub.name = name;
+      // Update or remove the name label element in the DOM
+      let nameEl = sub.element.querySelector('.sub-name-label');
+      if (name) {
+        if (!nameEl) {
+          nameEl = document.createElement('div');
+          nameEl.className = 'sub-name-label';
+          const numEl = sub.element.querySelector('.sub-number');
+          if (numEl) numEl.after(nameEl);
+          else sub.element.prepend(nameEl);
+        }
+        nameEl.textContent = name;
+      } else if (nameEl) {
+        nameEl.remove();
+      }
+      this.mc_subActTitle = this._ai
+        ? `${this._ai.label} › ${name || 'Sub ' + sub.number}`
+        : `Sub ${sub.number}`;
+      this.subNameLocked = true;
+      this._saveLayout();
+      this.statusText = 'Subsection name saved.';
+    },
+
+    proceedToShelves() {
+      this.m_subAct = false;
+      this._openShelfSelect(this._asub);
+    },
+
+    backFromSubAct() {
+      this.m_subAct = false;
+      if (this._ai && this._ai.subsections.length > 1) this._openSubsectionSelect(this._ai);
+      else this.closeAllModals();
     },
 
     _openShelfSelect(sub) {
-      this.mc_shelfSelTitle = `${this._ai.label} › Sub ${sub.number} — Select a Shelf`;
+      const subLabel = sub.name || `Sub ${sub.number}`;
+      this.mc_shelfSelTitle = `${this._ai.label} › ${subLabel} — Select a Shelf`;
       this.mc_shelfSelList  = sub.shelves;
       this.m_shelfSel = true;
     },
@@ -1235,12 +1395,36 @@ createApp({
     selectShelfFromList(shelf) {
       this._ash = shelf;
       this.m_shelfSel = false;
-      this.mc_shelfActTitle = `${this._ai.label} › Sub ${this._asub.number} › ${shelf.label}`;
-      this.mc_shelfActSub   = `${shelf.items.length} item${shelf.items.length !== 1 ? 's' : ''} on this shelf`;
+      const subLabel = this._asub.name || `Sub ${this._asub.number}`;
+      this.mc_shelfActTitle  = `${this._ai.label} › ${subLabel} › ${shelf.label}`;
+      this.mc_shelfActSub    = `${shelf.items.length} item${shelf.items.length !== 1 ? 's' : ''} on this shelf`;
+      this.f_shelfActName    = shelf.label;
+      this.shelfNameLocked   = true;
+      this.shelfActNameError = false;
       this.m_shelfAct = true;
     },
 
     backToShelfSelect() { this.m_shelfAct = false; this._openShelfSelect(this._asub); },
+
+    unlockShelfName() {
+      this.shelfNameLocked = false;
+      this.$nextTick(() => this.$refs.shelfNameInput?.focus());
+    },
+
+    saveShelfName() {
+      const label = this.f_shelfActName.trim();
+      if (!label) { this.shelfActNameError = true; return; }
+      this.shelfActNameError = false;
+      const shelf = this._ash;
+      if (!shelf) return;
+      shelf.label = label;
+      if (shelf.element) shelf.element.textContent = label;
+      const subLabel = this._asub.name || `Sub ${this._asub.number}`;
+      this.mc_shelfActTitle = `${this._ai.label} › ${subLabel} › ${label}`;
+      this.shelfNameLocked = true;
+      this._saveLayout();
+      this.statusText = 'Shelf label saved.';
+    },
 
     // ── Add shelf ────────────────────────────────────────────────────────────
 
@@ -1397,6 +1581,87 @@ createApp({
       this._selItemIds.clear(); this.mc_selItemIds = []; this.mc_selCount = 0;
       this.m_rmItems = false;
       this.selectShelfFromList(this._ash);
+    },
+
+    // ── Move items ────────────────────────────────────────────────────────────
+
+    openMoveItems() {
+      if (!this._selItemIds.size) return;
+      this._itemsToMove = this._ash.items.filter(i => this._selItemIds.has(i.id));
+      this._mvSrcIsle  = this._ai;
+      this._mvSrcSub   = this._asub;
+      this._mvSrcShelf = this._ash;
+      const n = this._itemsToMove.length;
+      this.mv_srcLabel = `${this._ai.label} › Sub ${this._asub.number} › ${this._ash.label}`;
+      this.mv_step  = 'isle';
+      this.mv_isles = this._isles.slice();
+      this.m_rmItems = false;
+      this.m_moveDest = true;
+    },
+
+    mvPickIsle(isle) {
+      this._mvDestIsle = isle;
+      this.mv_subs  = isle.subsections;
+      this.mv_step  = 'sub';
+    },
+
+    mvPickSub(sub) {
+      this._mvDestSub  = sub;
+      this.mv_shelves  = sub.shelves;
+      this.mv_step     = 'shelf';
+    },
+
+    async mvPickShelf(shelf) {
+      if (shelf.id === this._mvSrcShelf.id) return; // same shelf — no-op
+      const wh = this._warehouses[this._activeWhIdx];
+      for (const item of this._itemsToMove) {
+        await this._moveItemToDB(item.id, {
+          location_type:    'shelf',
+          warehouse_id:     wh?.id ?? null,
+          warehouse_name:   wh?.name ?? '',
+          isle_id:          this._mvDestIsle.id,
+          isle_label:       this._mvDestIsle.label,
+          isle_row:         this._mvDestIsle.row || '',
+          subsection_id:    this._mvDestSub.id,
+          subsection_number: this._mvDestSub.number,
+          shelf_id:         shelf.id,
+          shelf_label:      shelf.label,
+          zone_id:          null,
+          zone_label:       '',
+        });
+        // Update in-memory: remove from source, add to destination
+        this._mvSrcShelf.items = this._mvSrcShelf.items.filter(i => i.id !== item.id);
+        shelf.items.push({
+          ...item,
+          isleId: this._mvDestIsle.id, subsectionId: this._mvDestSub.id, shelfId: shelf.id,
+        });
+      }
+      const moved = this._itemsToMove.length;
+      this._itemsToMove = [];
+      this._selItemIds.clear(); this.mc_selItemIds = []; this.mc_selCount = 0;
+      this.m_moveDest = false;
+      this.statusText = `Moved ${moved} item${moved !== 1 ? 's' : ''} to ${this._mvDestIsle.label} › Sub ${this._mvDestSub.number} › ${shelf.label}.`;
+      // Return to source shelf actions
+      this._ai = this._mvSrcIsle; this._asub = this._mvSrcSub; this._ash = this._mvSrcShelf;
+      this.selectShelfFromList(this._mvSrcShelf);
+    },
+
+    mv_isSrcShelf(shelf) {
+      return this._mvSrcShelf && shelf.id === this._mvSrcShelf.id;
+    },
+
+    mvBack() {
+      if (this.mv_step === 'shelf')     { this.mv_step = 'sub'; }
+      else if (this.mv_step === 'sub')  { this.mv_step = 'isle'; }
+      else { this.m_moveDest = false; this._itemsToMove = []; this.m_rmItems = true; }
+    },
+
+    async _moveItemToDB(itemDbId, locationData) {
+      await fetch(`/api/items/${itemDbId}/location`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locationData),
+      });
     },
 
     // ── Zone actions / items ──────────────────────────────────────────────────
@@ -1556,6 +1821,72 @@ createApp({
       this._saveLayout();
     },
 
+    // ── Inspector panel ───────────────────────────────────────────────────────
+
+    _openInspector(entity, type) {
+      this._inspEntity      = entity;
+      this.insp_show        = true;
+      this.insp_type        = type;
+      this.insp_name        = entity.label;
+      this.insp_row         = entity.row || '';
+      this.insp_color       = entity.color;
+      this.insp_labelColor  = entity.labelColor || entity.color;
+      this.insp_fillColor   = entity.fillColor  || '#ffffff';
+      this.insp_fillOpacity = entity.fillOpacity ?? 0;
+      this.insp_hideLabel   = entity.hideLabel   ?? false;
+      this.insp_itemFree    = entity.itemFree    ?? false;
+      this.insp_nameError   = false;
+      this.insp_shelfOrder  = type === 'isle' ? (entity.facing || 'right') : 'right';
+      this.menuCollapsed    = false;  // auto-expand the menu
+    },
+
+    _closeInspector() {
+      this._inspEntity = null;
+      this.insp_show   = false;
+    },
+
+    async applyInspectorLabel() {
+      const name = this.insp_name.trim();
+      if (!name) { this.insp_nameError = true; return; }
+      this.insp_nameError = false;
+      const entity = this._inspEntity;
+      if (!entity) return;
+      entity.label = name;
+      if (this.insp_type === 'isle') {
+        const newRow = this.insp_row.trim();
+        entity.row = newRow;
+        const hdr = entity.element.querySelector('.isle-header');
+        if (hdr) hdr.innerHTML = this._isleHeaderHtml(newRow, name, entity.labelColor);
+        await fetch(`/api/items/isle/${entity.id}/label`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isle_label: name, isle_row: newRow }),
+        });
+      } else {
+        const lbl = entity.element.querySelector('.zone-label');
+        if (lbl) lbl.textContent = name;
+      }
+      this._saveLayout();
+      this.statusText = `"${name}" saved.`;
+    },
+
+    applyShelfOrder(facing) {
+      const isle = this._inspEntity;
+      if (!isle || this.insp_type !== 'isle' || isle.facing === facing) return;
+      isle.facing = facing;
+      this.insp_shelfOrder = facing;
+      isle.subsections.forEach(sub => {
+        sub.element.classList.toggle('facing-right', facing === 'right');
+        sub.element.classList.toggle('facing-left',  facing === 'left');
+        // Reversing all children of shelvesDiv swaps wall side and shelf order
+        const sd = sub.element.querySelector('.sub-shelves');
+        if (!sd) return;
+        const children = [...sd.children];
+        children.reverse().forEach(c => sd.appendChild(c));
+      });
+      this._saveLayout();
+    },
+
     // ── Copy / Paste isle ─────────────────────────────────────────────────────
 
     _copyIsle() {
@@ -1570,7 +1901,7 @@ createApp({
         subsectionStart: isle.subsectionStart, subsectionCount: isle.subsectionCount,
         position: { ...isle.position },
         subsections: isle.subsections.map(sub => ({
-          number: sub.number,
+          number: sub.number, name: sub.name || '',
           shelves: sub.shelves.map(sh => ({ shelfNumber: sh.shelfNumber, label: sh.label })),
         })),
         sourceLabel: isle.label,
@@ -1581,7 +1912,7 @@ createApp({
     _openPasteModal() {
       if (!this._copiedIsle) return;
       this.f_pasteIsleName    = this._copiedIsle.sourceLabel + ' (copy)';
-      this.mc_pasteIsleSub    = `Copying "${this._copiedIsle.sourceLabel}" — structure, colors, and facing. Items will not be copied.`;
+      this.mc_pasteIsleSub    = `Copying "${this._copiedIsle.sourceLabel}" — structure, colors, and shelf order. Items will not be copied.`;
       this.pasteIsleNameError = false;
       this.m_pasteIsle = true;
       this.$nextTick(() => { const el = this.$refs.pasteIsleInput; el?.focus(); el?.select(); });
@@ -1627,6 +1958,12 @@ createApp({
         const numEl = document.createElement('div');
         numEl.className = 'sub-number'; numEl.textContent = srcSub.number;
         subEl.appendChild(numEl);
+        if (srcSub.name) {
+          const nameEl = document.createElement('div');
+          nameEl.className = 'sub-name-label';
+          nameEl.textContent = srcSub.name;
+          subEl.appendChild(nameEl);
+        }
         const shelvesDiv = document.createElement('div'); shelvesDiv.className = 'sub-shelves';
         const wallEl = document.createElement('div');     wallEl.className = 'wall-indicator';
         const shelves = srcSub.shelves.map(ss => ({
@@ -1641,13 +1978,13 @@ createApp({
         if (src.facing === 'left') { [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); shelvesDiv.appendChild(wallEl); }
         else                       { shelvesDiv.appendChild(wallEl); shelves.forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); }
         subEl.appendChild(shelvesDiv);
-        const subObj = { id: subId, isleId: id, number: srcSub.number, element: subEl, shelves };
+        const subObj = { id: subId, isleId: id, number: srcSub.number, name: srcSub.name || '', element: subEl, shelves };
         isle.subsections.push(subObj);
         subEl.addEventListener('click', (ev) => {
           ev.stopPropagation();
           if (this._drawMode || this._editMode || this._isleDragMoved) return;
-          this._ai = this._isles.find(i => i.id === id); this._asub = subObj;
-          this._openShelfSelect(subObj);
+          this._ai = this._isles.find(i => i.id === id);
+          this._openSubsectionActions(subObj);
         });
         body.appendChild(subEl);
       });
@@ -1662,6 +1999,72 @@ createApp({
       this.isleCountText = `Isles: ${this._isles.length}`;
       this.statusText = `Isle "${name}" pasted.`;
       this.m_pasteIsle = false;
+      this._saveLayout();
+    },
+
+    // ── Copy / Paste zone ─────────────────────────────────────────────────────
+
+    _copyZone() {
+      if (!this._selZone) return;
+      const zone = this._selZone;
+      this._copiedZone = {
+        color: zone.color, fillOpacity: zone.fillOpacity,
+        labelColor: zone.labelColor, rotation: zone.rotation || 0,
+        hideLabel: zone.hideLabel ?? false, itemFree: zone.itemFree ?? false,
+        dimensions: { ...zone.dimensions }, position: { ...zone.position },
+        sourceLabel: zone.label,
+      };
+      this._copiedIsle = null;
+      this.statusText = `Copied "${zone.label}". Press Ctrl+V to paste.`;
+    },
+
+    _openPasteZoneModal() {
+      if (!this._copiedZone) return;
+      this.f_pasteZoneName    = this._copiedZone.sourceLabel + ' (copy)';
+      this.mc_pasteZoneSub    = `Copying "${this._copiedZone.sourceLabel}" — size, color, and rotation. Items will not be copied.`;
+      this.pasteZoneNameError = false;
+      this.m_pasteZone = true;
+      this.$nextTick(() => { const el = this.$refs.pasteZoneInput; el?.focus(); el?.select(); });
+    },
+
+    pasteZone() {
+      const label = this.f_pasteZoneName.trim();
+      if (!label) { this.pasteZoneNameError = true; return; }
+      this.pasteZoneNameError = false;
+      const src = this._copiedZone;
+      const id  = ++this._zoneCounter;
+      const x   = src.position.x + 30;
+      const y   = src.position.y + 30;
+
+      const el = document.createElement('div');
+      el.className = 'zone';
+      Object.assign(el.style, {
+        left:`${x}px`, top:`${y}px`,
+        width:`${src.dimensions.width}px`, height:`${src.dimensions.height}px`,
+        borderColor: src.color, transform:`rotate(${src.rotation}deg)`,
+      });
+      el.dataset.zoneId = id;
+      this._applyZoneFill(el, src.color, src.fillOpacity);
+      const lblEl = document.createElement('div');
+      lblEl.className = 'zone-label';
+      lblEl.textContent = label; lblEl.style.color = src.labelColor;
+      if (src.hideLabel) lblEl.style.display = 'none';
+      el.appendChild(lblEl);
+      this._wh.appendChild(el);
+
+      const zone = {
+        id, label, color: src.color, fillOpacity: src.fillOpacity,
+        labelColor: src.labelColor, rotation: src.rotation,
+        hideLabel: src.hideLabel ?? false, itemFree: src.itemFree ?? false,
+        position: { x, y }, dimensions: { ...src.dimensions },
+        items: [], element: el, createdAt: new Date().toISOString(),
+      };
+      this._zones.push(zone);
+      this._attachZoneHandlers(zone);
+      if (this._editMode) this._createHandles(zone, 'zone');
+
+      this.statusText = `Zone "${label}" pasted.`;
+      this.m_pasteZone = false;
       this._saveLayout();
     },
 
@@ -1694,12 +2097,17 @@ createApp({
 
     // ── Modal helpers ─────────────────────────────────────────────────────────
 
+    // Public alias so Vue templates can call _saveLayout (underscore methods aren't on the proxy)
+    saveLayout() { this._saveLayout(); },
+
     closeAllModals() {
       this.m_count = this.m_subs = this.m_labels = this.m_subSel = this.m_shelfSel = false;
       this.m_addShelf = this.m_shelfAct = this.m_addItem = this.m_rmItems = this.m_confDel = false;
-      this.m_zone = this.m_pasteIsle = this.m_delEnt = this.m_zoneAct = this.m_zoneItems = false;
+      this.m_zone = this.m_pasteIsle = this.m_pasteZone = this.m_delEnt = this.m_zoneAct = this.m_zoneItems = false;
+      this.m_moveDest = this.m_subAct = false;
       this._ai = null; this._asub = null; this._ash = null; this._azfi = null;
       this._selItemIds.clear(); this._selZoneItemIds.clear();
+      this._itemsToMove = [];
       this.mc_selItemIds = []; this.mc_selZoneItemIds = [];
       this.mc_selCount = 0; this.mc_zoneSelCount = 0;
     },
@@ -1814,7 +2222,7 @@ createApp({
         subsectionStart: isle.subsectionStart, subsectionCount: isle.subsectionCount,
         createdAt: isle.createdAt,
         subsections: isle.subsections.map(sub => ({
-          id: sub.id, number: sub.number,
+          id: sub.id, number: sub.number, name: sub.name || '',
           shelves: sub.shelves.map(sh => ({
             id: sh.id, shelfNumber: sh.shelfNumber, label: sh.label,
             items: sh.items.map(item => ({ ...item })),
@@ -1825,6 +2233,7 @@ createApp({
         id: zone.id, label: zone.label, color: zone.color,
         fillOpacity: zone.fillOpacity ?? 18, labelColor: zone.labelColor || '#444444',
         rotation: zone.rotation || 0,
+        hideLabel: zone.hideLabel ?? false, itemFree: zone.itemFree ?? false,
         position: { ...zone.position }, dimensions: { ...zone.dimensions },
         items: (zone.items || []).map(item => ({ ...item })),
         createdAt: zone.createdAt,
@@ -2010,6 +2419,12 @@ createApp({
         const numEl = document.createElement('div');
         numEl.className = 'sub-number'; numEl.textContent = sd.number;
         subEl.appendChild(numEl);
+        if (sd.name) {
+          const nameEl = document.createElement('div');
+          nameEl.className = 'sub-name-label';
+          nameEl.textContent = sd.name;
+          subEl.appendChild(nameEl);
+        }
 
         const shelvesDiv = document.createElement('div'); shelvesDiv.className = 'sub-shelves';
         const wallEl     = document.createElement('div'); wallEl.className = 'wall-indicator';
@@ -2035,15 +2450,14 @@ createApp({
         }
         subEl.appendChild(shelvesDiv);
 
-        const subObj = { id: sd.id, isleId: d.id, number: sd.number, element: subEl, shelves };
+        const subObj = { id: sd.id, isleId: d.id, number: sd.number, name: sd.name || '', element: subEl, shelves };
         isle.subsections.push(subObj);
 
         subEl.addEventListener('click', (e) => {
           e.stopPropagation();
           if (this._drawMode || this._editMode || this._isleDragMoved) return;
-          this._ai   = this._isles.find(i => i.id === d.id);
-          this._asub = subObj;
-          this._openShelfSelect(subObj);
+          this._ai = this._isles.find(i => i.id === d.id);
+          this._openSubsectionActions(subObj);
         });
         body.appendChild(subEl);
       });
@@ -2059,6 +2473,8 @@ createApp({
       const fillOpacity = d.fillOpacity ?? 18;
       const labelColor  = d.labelColor  || '#444444';
       const rotation    = d.rotation    || 0;
+      const hideLabel   = d.hideLabel   ?? false;
+      const itemFree    = d.itemFree    ?? false;
       const el = document.createElement('div');
       el.className = 'zone';
       Object.assign(el.style, {
@@ -2070,10 +2486,12 @@ createApp({
       el.dataset.zoneId = d.id;
       const lblEl = document.createElement('div');
       lblEl.className = 'zone-label'; lblEl.textContent = d.label; lblEl.style.color = labelColor;
+      if (hideLabel) lblEl.style.display = 'none';
       el.appendChild(lblEl);
       this._wh.appendChild(el);
       const zone = {
         id: d.id, label: d.label, color: d.color, fillOpacity, labelColor, rotation,
+        hideLabel, itemFree,
         position: { ...d.position }, dimensions: { ...d.dimensions },
         items: (d.items || []).map(i => ({ ...i })), element: el, createdAt: d.createdAt,
       };
