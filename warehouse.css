@@ -271,13 +271,13 @@
       50%  { box-shadow: 0 0 0 5px rgba(251,146,60,0);   background: rgba(253,186,116,0.8); }
       100% { box-shadow: 0 0 0 0   rgba(251,146,60,0.9); background: rgba(251,146,60,0.55); }
     }
-    .shelf-slot.shelf-highlight { animation: pulse-shelf 1s ease-in-out infinite; }
+    .shelf-slot.shelf-highlight { animation: pulse-shelf 2s ease-in-out infinite; }
     @keyframes pulse-zone {
-      0%   { box-shadow: 0 0 0 0   rgba(74,222,128,0.9); background-color: rgba(74,222,128,0.25); }
-      50%  { box-shadow: 0 0 0 8px rgba(74,222,128,0);   background-color: rgba(134,239,172,0.4); }
-      100% { box-shadow: 0 0 0 0   rgba(74,222,128,0.9); background-color: rgba(74,222,128,0.25); }
+      0%   { box-shadow: 0 0 0 0   rgba(254,240,138,0.9); background-color: rgba(254,240,138,0.4); }
+      50%  { box-shadow: 0 0 0 8px rgba(254,240,138,0);   background-color: rgba(253,224,71,0.6); }
+      100% { box-shadow: 0 0 0 0   rgba(254,240,138,0.9); background-color: rgba(254,240,138,0.4); }
     }
-    .zone.zone-highlight { animation: pulse-zone 1s ease-in-out infinite; z-index: 5; }
+    .zone.zone-highlight { animation: pulse-zone 2s ease-in-out infinite; z-index: 5; }
 
     .pallet-rack-header {
       padding: 3px 6px; font-size: 11px; font-weight: 700;
@@ -519,6 +519,20 @@
     .btn-move:hover:not(:disabled) { filter: brightness(1.1); }
     .btn-move:disabled, .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
     .select-row.move-dest-disabled { opacity: 0.4; pointer-events: none; }
+
+    /* ── Warning confirm modal ── */
+    .modal.modal-warn {
+      border-top: 4px solid #f59e0b;
+      text-align: center;
+      gap: 10px;
+    }
+    .warn-icon {
+      font-size: 40px; line-height: 1; color: #f59e0b;
+      text-shadow: 0 0 12px rgba(245,158,11,0.35);
+    }
+    .modal.modal-warn .modal-title { font-size: 18px; padding-right: 0; }
+    .modal-body { font-size: 13px; color: #475569; margin: 0; line-height: 1.6; }
+    .modal.modal-warn .modal-actions { justify-content: center; gap: 16px; }
 
     /* ── Form fields ── */
     .form-field { display: flex; flex-direction: column; gap: 5px; }

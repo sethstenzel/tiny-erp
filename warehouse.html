@@ -781,6 +781,19 @@
     </div>
   </div>
 
+  <!-- ══ Warning confirm modal ══ -->
+  <div class="modal-overlay" v-show="m_warn">
+    <div class="modal modal-warn">
+      <div class="warn-icon">&#x26A0;</div>
+      <p class="modal-title">{{ warnModal.title }}</p>
+      <p class="modal-body">{{ warnModal.message }}</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="warnAnswer(false)">No</button>
+        <button class="btn-danger" @click="warnAnswer(true)">Yes, Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Search results strip ── -->
   <div class="search-results" :class="{ hidden: !showSearchResults || searchResults.length === 0 }">
     <div v-for="(result, idx) in searchResults" :key="idx"

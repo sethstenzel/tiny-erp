@@ -53,6 +53,8 @@ const _vueApp = createApp({
       m_zone:      false,
       m_pastePalletRack: false,
       m_pasteZone: false,
+      m_warn:      false,
+      warnModal:   { title: '', message: '' },
       m_delEnt:    false,
       m_zoneAct:   false,
       m_zoneItems: false,
@@ -894,6 +896,7 @@ const _vueApp = createApp({
             } else {
               this._panToElement(el);
             }
+            this._scheduleHighlightClear();
           }
         });
       }
@@ -2531,6 +2534,7 @@ const _vueApp = createApp({
 
       this.searchResults     = results;
       this.showSearchResults = true;
+      if (results.length > 0) this._scheduleHighlightClear();
 
       if (results.length === 0) {
         this._log(`No items found matching "${query}"`, 'warn');
@@ -2562,8 +2566,15 @@ const _vueApp = createApp({
     },
 
     _clearHighlights() {
+      clearTimeout(this._highlightTimer);
+      this._highlightTimer = null;
       this._wh.querySelectorAll('.pallet-rack-highlight,.sub-highlight,.shelf-highlight,.zone-highlight')
         .forEach(el => el.classList.remove('pallet-rack-highlight','sub-highlight','shelf-highlight','zone-highlight'));
+    },
+
+    _scheduleHighlightClear() {
+      clearTimeout(this._highlightTimer);
+      this._highlightTimer = setTimeout(() => this._clearHighlights(), 20_000);
     },
 
     // ── Navigation dropdowns ──────────────────────────────────────────────────
@@ -2624,6 +2635,7 @@ const _vueApp = createApp({
       this._clearHighlights();
       pr.element.classList.add('pallet-rack-highlight');
       this._jumpToElement(pr.element, pr.position.x, pr.position.y, pr.dimensions.width, pr.dimensions.height);
+      this._scheduleHighlightClear();
     },
 
     jumpToZone(entry) {
@@ -2708,8 +2720,39 @@ const _vueApp = createApp({
       this._saveLayout();
     },
 
-    removeTab(idx) {
+    _confirmWarn(title, message) {
+      this.warnModal = { title, message };
+      this.m_warn = true;
+      return new Promise(resolve => { this._warnResolve = resolve; });
+    },
+
+    warnAnswer(answer) {
+      this.m_warn = false;
+      if (this._warnResolve) { this._warnResolve(answer); this._warnResolve = null; }
+    },
+
+    async removeTab(idx) {
       if (this._warehouses.length <= 1) return;
+      const whName = this._warehouses[idx]?.name || `Warehouse ${idx + 1}`;
+      const ok1 = await this._confirmWarn(
+        'Delete Warehouse?',
+        `"${whName}" and all its pallet racks, zones, and items will be permanently removed.`,
+      );
+      if (!ok1) return;
+      const ok2 = await this._confirmWarn(
+        'Are You Absolutely Sure?',
+        `Final confirmation — permanently delete "${whName}"? This cannot be undone.`,
+      );
+      if (!ok2) return;
+      // Back up the database before destructive change
+      try {
+        const resp = await fetch('/api/backup-db', { method: 'POST' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      } catch (err) {
+        alert('Database backup failed — deletion cancelled for safety. Please try again.');
+        _sendVueError(err?.message || String(err), 'removeTab:backup', err?.stack || '', 'warehouse.js:removeTab');
+        return;
+      }
       this._serializeCurrentWarehouse();
       this._warehouses.splice(idx, 1);
       if (idx < this._activeWhIdx) {

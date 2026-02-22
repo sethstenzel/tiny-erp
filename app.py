@@ -124,10 +124,16 @@ def init_db():
             conn.execute("ALTER TABLE items ADD COLUMN subsection_name TEXT DEFAULT ''")
         if "isle_id" in existing_cols and "pallet_rack_id" not in existing_cols:
             conn.execute("ALTER TABLE items RENAME COLUMN isle_id TO pallet_rack_id")
+        elif "pallet_rack_id" not in existing_cols:
+            conn.execute("ALTER TABLE items ADD COLUMN pallet_rack_id INTEGER")
         if "isle_label" in existing_cols and "pallet_rack_label" not in existing_cols:
             conn.execute("ALTER TABLE items RENAME COLUMN isle_label TO pallet_rack_label")
+        elif "pallet_rack_label" not in existing_cols:
+            conn.execute("ALTER TABLE items ADD COLUMN pallet_rack_label TEXT DEFAULT ''")
         if "isle_row" in existing_cols and "pallet_rack_row" not in existing_cols:
             conn.execute("ALTER TABLE items RENAME COLUMN isle_row TO pallet_rack_row")
+        elif "pallet_rack_row" not in existing_cols:
+            conn.execute("ALTER TABLE items ADD COLUMN pallet_rack_row TEXT DEFAULT ''")
         conn.commit()
         conn.close()
         backend_log.info("Database initialised successfully")
@@ -257,6 +263,16 @@ def get_layout(user: dict = Depends(get_current_user)):
 
 class LayoutBody(BaseModel):
     data: dict
+
+
+@app.post("/api/backup-db")
+def backup_db(user: dict = Depends(require_admin)):
+    import shutil
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = f"warehouse_backup_{ts}.sqlite"
+    shutil.copy2(DB_PATH, backup_path)
+    backend_log.info("Database backed up to '%s' by '%s'", backup_path, user["username"])
+    return {"ok": True, "backup": backup_path}
 
 
 @app.put("/api/layout")
