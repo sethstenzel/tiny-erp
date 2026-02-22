@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException, Cookie, Depends, Response
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Cookie, Depends, Response, Request
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import sqlite3
 import json
 import uuid
+import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -15,6 +17,49 @@ app = FastAPI(title="IndSurp Warehouse API")
 sessions: dict[str, dict] = {}
 
 
+# ── Logging setup ─────────────────────────────────────────────────────────────
+
+def _make_logger(name: str, path: str) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    if not logger.handlers:
+        handler = RotatingFileHandler(
+            path, maxBytes=5_242_880, backupCount=3, encoding="utf-8"
+        )
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ))
+        logger.addHandler(handler)
+    return logger
+
+backend_log = _make_logger("backend", "backend_errors.log")
+vue_log     = _make_logger("vue",     "vue_errors.log")
+
+
+# ── HTTP middleware — log 4xx/5xx and unhandled exceptions ───────────────────
+
+@app.middleware("http")
+async def log_http_errors(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        if status >= 500:
+            backend_log.error("%s %s → %d", request.method, request.url.path, status)
+        elif status >= 400:
+            # Skip 401 on /api/me — it's used as an auth probe on page load
+            if not (status == 401 and request.url.path == "/api/me"):
+                backend_log.warning("%s %s → %d", request.method, request.url.path, status)
+        return response
+    except Exception as exc:
+        backend_log.error(
+            "Unhandled exception on %s %s",
+            request.method, request.url.path,
+            exc_info=True,
+        )
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 # ── Database ─────────────────────────────────────────────────────────────────
 
 def get_db():
@@ -24,66 +69,71 @@ def get_db():
 
 
 def init_db():
-    conn = get_db()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS layout (
-            id      INTEGER PRIMARY KEY DEFAULT 1,
-            data    TEXT    NOT NULL,
-            updated_at TEXT NOT NULL
-        );
+    try:
+        conn = get_db()
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS layout (
+                id      INTEGER PRIMARY KEY DEFAULT 1,
+                data    TEXT    NOT NULL,
+                updated_at TEXT NOT NULL
+            );
 
-        CREATE TABLE IF NOT EXISTS items (
-            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_id            TEXT NOT NULL,
-            item_type          TEXT DEFAULT '',
-            category           TEXT DEFAULT '',
-            notes              TEXT DEFAULT '',
-            added_at           TEXT NOT NULL,
-            location_type      TEXT NOT NULL DEFAULT 'shelf',
-            warehouse_id       INTEGER,
-            warehouse_name     TEXT DEFAULT '',
-            pallet_rack_id     INTEGER,
-            pallet_rack_label  TEXT DEFAULT '',
-            pallet_rack_row    TEXT DEFAULT '',
-            subsection_id      INTEGER,
-            subsection_number  INTEGER,
-            shelf_id           INTEGER,
-            shelf_label        TEXT DEFAULT '',
-            zone_id            INTEGER,
-            zone_label         TEXT DEFAULT ''
-        );
+            CREATE TABLE IF NOT EXISTS items (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id            TEXT NOT NULL,
+                item_type          TEXT DEFAULT '',
+                category           TEXT DEFAULT '',
+                notes              TEXT DEFAULT '',
+                added_at           TEXT NOT NULL,
+                location_type      TEXT NOT NULL DEFAULT 'shelf',
+                warehouse_id       INTEGER,
+                warehouse_name     TEXT DEFAULT '',
+                pallet_rack_id     INTEGER,
+                pallet_rack_label  TEXT DEFAULT '',
+                pallet_rack_row    TEXT DEFAULT '',
+                subsection_id      INTEGER,
+                subsection_number  INTEGER,
+                shelf_id           INTEGER,
+                shelf_label        TEXT DEFAULT '',
+                zone_id            INTEGER,
+                zone_label         TEXT DEFAULT ''
+            );
 
-        CREATE TABLE IF NOT EXISTS users (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password TEXT NOT NULL,
-            role     TEXT NOT NULL DEFAULT 'worker'
-        );
-    """)
-    conn.execute(
-        "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
-        ("admin", "admin", "admin"),
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
-        ("worker", "worker", "worker"),
-    )
-    # Add new columns to items if they don't exist yet (migration)
-    existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)").fetchall()}
-    if "url" not in existing_cols:
-        conn.execute("ALTER TABLE items ADD COLUMN url TEXT DEFAULT ''")
-    if "tags" not in existing_cols:
-        conn.execute("ALTER TABLE items ADD COLUMN tags TEXT DEFAULT ''")
-    if "subsection_name" not in existing_cols:
-        conn.execute("ALTER TABLE items ADD COLUMN subsection_name TEXT DEFAULT ''")
-    if "isle_id" in existing_cols and "pallet_rack_id" not in existing_cols:
-        conn.execute("ALTER TABLE items RENAME COLUMN isle_id TO pallet_rack_id")
-    if "isle_label" in existing_cols and "pallet_rack_label" not in existing_cols:
-        conn.execute("ALTER TABLE items RENAME COLUMN isle_label TO pallet_rack_label")
-    if "isle_row" in existing_cols and "pallet_rack_row" not in existing_cols:
-        conn.execute("ALTER TABLE items RENAME COLUMN isle_row TO pallet_rack_row")
-    conn.commit()
-    conn.close()
+            CREATE TABLE IF NOT EXISTS users (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                role     TEXT NOT NULL DEFAULT 'worker'
+            );
+        """)
+        conn.execute(
+            "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
+            ("admin", "admin", "admin"),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
+            ("worker", "worker", "worker"),
+        )
+        # Add new columns to items if they don't exist yet (migration)
+        existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)").fetchall()}
+        if "url" not in existing_cols:
+            conn.execute("ALTER TABLE items ADD COLUMN url TEXT DEFAULT ''")
+        if "tags" not in existing_cols:
+            conn.execute("ALTER TABLE items ADD COLUMN tags TEXT DEFAULT ''")
+        if "subsection_name" not in existing_cols:
+            conn.execute("ALTER TABLE items ADD COLUMN subsection_name TEXT DEFAULT ''")
+        if "isle_id" in existing_cols and "pallet_rack_id" not in existing_cols:
+            conn.execute("ALTER TABLE items RENAME COLUMN isle_id TO pallet_rack_id")
+        if "isle_label" in existing_cols and "pallet_rack_label" not in existing_cols:
+            conn.execute("ALTER TABLE items RENAME COLUMN isle_label TO pallet_rack_label")
+        if "isle_row" in existing_cols and "pallet_rack_row" not in existing_cols:
+            conn.execute("ALTER TABLE items RENAME COLUMN isle_row TO pallet_rack_row")
+        conn.commit()
+        conn.close()
+        backend_log.info("Database initialised successfully")
+    except Exception:
+        backend_log.critical("Database initialisation failed", exc_info=True)
+        raise
 
 
 init_db()
@@ -130,6 +180,27 @@ async def serve_js():
     return FileResponse("warehouse.js")
 
 
+# ── Vue error ingest ──────────────────────────────────────────────────────────
+
+class VueErrorBody(BaseModel):
+    message: str
+    source:  str = ""
+    stack:   str = ""
+    info:    str = ""
+    url:     str = ""
+
+
+@app.post("/api/log-vue-error")
+async def log_vue_error(body: VueErrorBody):
+    parts = [f"message: {body.message}"]
+    if body.info:   parts.append(f"info: {body.info}")
+    if body.source: parts.append(f"source: {body.source}")
+    if body.url:    parts.append(f"url: {body.url}")
+    if body.stack:  parts.append(f"stack:\n{body.stack}")
+    vue_log.error("\n".join(parts))
+    return {"ok": True}
+
+
 # ── Auth API ─────────────────────────────────────────────────────────────────
 
 class LoginBody(BaseModel):
@@ -146,17 +217,21 @@ def login(body: LoginBody, response: Response):
     ).fetchone()
     conn.close()
     if not row:
+        backend_log.warning("Failed login attempt for user '%s'", body.username)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = str(uuid.uuid4())
     sessions[token] = {"username": row["username"], "role": row["role"]}
     response.set_cookie(key="session_id", value=token, httponly=True, samesite="lax")
+    backend_log.info("User '%s' (%s) logged in", row["username"], row["role"])
     return {"username": row["username"], "role": row["role"]}
 
 
 @app.post("/api/logout")
 def logout(response: Response, session_id: Optional[str] = Cookie(None)):
     if session_id and session_id in sessions:
+        username = sessions[session_id].get("username", "unknown")
         del sessions[session_id]
+        backend_log.info("User '%s' logged out", username)
     response.delete_cookie("session_id")
     return {"ok": True}
 
@@ -174,7 +249,9 @@ def get_layout(user: dict = Depends(get_current_user)):
     row = conn.execute("SELECT data FROM layout WHERE id = 1").fetchone()
     conn.close()
     if row:
+        backend_log.info("Layout loaded by '%s'", user["username"])
         return json.loads(row["data"])
+    backend_log.info("Layout requested by '%s' — no layout found, returning empty", user["username"])
     return {"warehouses": [], "activeWarehouseIdx": 0}
 
 
@@ -195,6 +272,8 @@ def save_layout(body: LayoutBody, user: dict = Depends(require_admin)):
     )
     conn.commit()
     conn.close()
+    wh_count = len(body.data.get("warehouses", []))
+    backend_log.info("Layout saved by '%s' (%d warehouse(s))", user["username"], wh_count)
     return {"ok": True}
 
 
@@ -327,6 +406,10 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
+    backend_log.info(
+        "Item added: id=%d item_id='%s' location=%s by '%s'",
+        new_id, body.item_id, body.location_type, user["username"],
+    )
     return {"id": new_id}
 
 
@@ -344,6 +427,10 @@ def relabel_pallet_rack_items(pallet_rack_id: int, body: PalletRackRelabelBody, 
     )
     conn.commit()
     conn.close()
+    backend_log.info(
+        "Pallet rack %d relabelled to '%s' (row '%s') by '%s'",
+        pallet_rack_id, body.pallet_rack_label, body.pallet_rack_row, user["username"],
+    )
     return {"ok": True}
 
 
@@ -355,12 +442,16 @@ class RenameWarehouseBody(BaseModel):
 @app.patch("/api/items/rename-warehouse")
 def rename_warehouse_items(body: RenameWarehouseBody, user: dict = Depends(get_current_user)):
     conn = get_db()
-    conn.execute(
+    result = conn.execute(
         "UPDATE items SET warehouse_name = ? WHERE warehouse_name = ?",
         (body.new_name, body.old_name),
     )
     conn.commit()
     conn.close()
+    backend_log.info(
+        "Warehouse renamed '%s' → '%s' (%d item(s) updated) by '%s'",
+        body.old_name, body.new_name, result.rowcount, user["username"],
+    )
     return {"ok": True}
 
 
@@ -402,6 +493,10 @@ def move_item(item_db_id: int, body: MoveItemBody, user: dict = Depends(get_curr
     )
     conn.commit()
     conn.close()
+    backend_log.info(
+        "Item db_id=%d moved to %s '%s' by '%s'",
+        item_db_id, body.location_type, body.warehouse_name, user["username"],
+    )
     return {"ok": True}
 
 
@@ -411,4 +506,5 @@ def delete_item(item_db_id: int, user: dict = Depends(get_current_user)):
     conn.execute("DELETE FROM items WHERE id = ?", (item_db_id,))
     conn.commit()
     conn.close()
+    backend_log.info("Item db_id=%d deleted by '%s'", item_db_id, user["username"])
     return {"ok": True}

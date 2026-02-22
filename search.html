@@ -182,12 +182,7 @@
     .cell-url a:hover { text-decoration: underline; }
     .cell-notes { color: #94a3b8; font-style: italic; white-space: pre-wrap; word-break: break-word; }
     .cell-location { white-space: nowrap; }
-    .loc-path { display: flex; flex-direction: column; gap: 2px; }
-    .loc-type {
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-      color: #475569;
-    }
-    .loc-detail { font-size: 12px; color: #94a3b8; }
+    .loc-text { font-size: 12px; color: #94a3b8; }
     .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; }
     .tag-chip {
       display: inline-block; padding: 2px 8px;
@@ -454,24 +449,19 @@
     }
 
     function formatLocation(item) {
-      if (item.location_type === 'zone') {
-        const parts = [item.warehouse_name, item.zone_label].filter(Boolean);
-        return `<div class="loc-path">
-          <span class="loc-type">Zone</span>
-          <span class="loc-detail">${esc(parts.join(' › '))}</span>
-        </div>`;
-      }
       const parts = [];
-      if (item.warehouse_name) parts.push(item.warehouse_name);
-      if (item.pallet_rack_row)   parts.push(`Row ${item.pallet_rack_row}`);
-      if (item.pallet_rack_label) parts.push(item.pallet_rack_label);
-      if (item.subsection_number != null)
-        parts.push(item.subsection_name || `Sub ${item.subsection_number}`);
-      if (item.shelf_label)     parts.push(item.shelf_label);
-      return `<div class="loc-path">
-        <span class="loc-type">Shelf</span>
-        <span class="loc-detail">${esc(parts.join(' › '))}</span>
-      </div>`;
+      if (item.warehouse_name) parts.push(`WH: ${item.warehouse_name}`);
+      if (item.location_type === 'zone') {
+        if (item.zone_label) parts.push(`Z: ${item.zone_label}`);
+      } else {
+        if (item.pallet_rack_label) parts.push(`PR: ${item.pallet_rack_label}`);
+        if (item.subsection_number != null)
+          parts.push(`SUB: ${item.subsection_name || item.subsection_number}`);
+        if (item.shelf_label) parts.push(`SH: ${item.shelf_label}`);
+      }
+      if (item.item_id)   parts.push(`ID: ${item.item_id}`);
+      if (item.item_type) parts.push(`T: ${item.item_type}`);
+      return `<span class="loc-text">${esc(parts.join(' | '))}</span>`;
     }
 
     function renderTags(raw) {

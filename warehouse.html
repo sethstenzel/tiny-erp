@@ -153,6 +153,36 @@
       </div>
     </template>
 
+    <!-- Nav: Pallet Racks -->
+    <div class="nav-section" v-if="navPalletRacks.length > 0">
+      <button class="nav-section-header" @click="navPROpen = !navPROpen">
+        <span class="nav-section-icon">{{ navPROpen ? '▾' : '▸' }}</span>
+        Pallet Racks
+        <span class="nav-section-count">{{ navPalletRacks.length }}</span>
+      </button>
+      <div v-show="navPROpen" class="nav-list">
+        <div v-for="pr in navPalletRacks" :key="pr.warehouseIdx + '-' + pr.id" class="nav-item" @click="jumpToPalletRack(pr)">
+          <span class="nav-item-label">{{ pr.label }}</span>
+          <span v-if="pr.row || pr.whLabel" class="nav-item-meta">{{ [pr.row, pr.whLabel].filter(Boolean).join(' · ') }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav: Zones -->
+    <div class="nav-section" v-if="navZones.length > 0">
+      <button class="nav-section-header" @click="navZonesOpen = !navZonesOpen">
+        <span class="nav-section-icon">{{ navZonesOpen ? '▾' : '▸' }}</span>
+        Zones
+        <span class="nav-section-count">{{ navZones.length }}</span>
+      </button>
+      <div v-show="navZonesOpen" class="nav-list">
+        <div v-for="zone in navZones" :key="zone.warehouseIdx + '-' + zone.id" class="nav-item" @click="jumpToZone(zone)">
+          <span class="nav-item-label">{{ zone.label }}</span>
+          <span v-if="zone.whLabel" class="nav-item-meta">{{ zone.whLabel }}</span>
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex;gap:5px;margin-top:2px;">
       <button @click="zoomOut" title="Zoom Out" style="flex:1;padding:7px 4px;border:1px solid #334155;border-radius:6px;background:#0f172a;cursor:pointer;font-size:18px;font-weight:700;color:#94a3b8;line-height:1;">−</button>
       <button @click="resetView" title="Reset View" style="flex:1;padding:7px 4px;border:1px solid #334155;border-radius:6px;background:#0f172a;cursor:pointer;font-size:13px;font-weight:700;color:#94a3b8;line-height:1;">⌂</button>

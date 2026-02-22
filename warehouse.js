@@ -1,6 +1,32 @@
 const { createApp } = Vue;
 
-createApp({
+// ── Frontend error reporting ──────────────────────────────────────────────────
+function _sendVueError(message, info, stack, source) {
+  try {
+    fetch('/api/log-vue-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: String(message || ''),
+        info:    String(info    || ''),
+        stack:   String(stack   || ''),
+        source:  String(source  || ''),
+        url:     window.location.href,
+      }),
+    }).catch(() => {}); // swallow network errors to avoid loops
+  } catch (_) {}
+}
+
+window.addEventListener('error', (e) => {
+  _sendVueError(e.message, '', e.error?.stack || '', `${e.filename}:${e.lineno}:${e.colno}`);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason;
+  _sendVueError(r?.message || String(r ?? 'Unhandled rejection'), '', r?.stack || '', 'unhandledrejection');
+});
+
+const _vueApp = createApp({
   /* ══════════════════════════════════════════
      REACTIVE STATE
   ══════════════════════════════════════════ */
@@ -143,6 +169,12 @@ createApp({
 
       // Console log strip
       consoleLogs: [],
+
+      // Nav dropdowns
+      navPROpen:      false,
+      navZonesOpen:   false,
+      navPalletRacks: [],
+      navZones:       [],
 
       // Status / info
       statusText:    'Click "Add Pallet Rack" then draw inside the warehouse.',
@@ -527,15 +559,20 @@ createApp({
           this._mergeItems(layoutData, items);
           this._importAllWarehouses(layoutData);
         } else {
-          this._freshWarehouse();
+          // DB returned no layout — genuinely first run, safe to persist a blank warehouse
+          this._freshWarehouse(true);
         }
       } catch (err) {
+        // Network or parse error (e.g. rapid refresh aborting the request).
+        // Show a blank UI so the app is usable, but DO NOT save — the real
+        // layout is still in the DB and must not be overwritten with empty data.
         console.error('Load from DB failed:', err);
-        this._freshWarehouse();
+        _sendVueError(err?.message || String(err), 'loadFromDB', err?.stack || '', 'warehouse.js:_loadFromDB');
+        this._freshWarehouse(false);
       }
     },
 
-    _freshWarehouse() {
+    _freshWarehouse(persist = false) {
       this._whTabCounter = 1;
       this._activeWhIdx  = 0;
       this._warehouses.push({
@@ -547,8 +584,9 @@ createApp({
       // Render the warehouse square and set its inline dimensions before centering
       this._loadWarehouseDOM(this._warehouses[0]);
       this._syncTabs();
-      // Persist the initial warehouse so subsequent loads find it in the DB (admin only)
-      if (this.isAdmin) this._saveLayout();
+      // Only persist when we know the DB was genuinely empty (first-run).
+      // Never persist when called as a fallback from a failed network request.
+      if (persist && this.isAdmin) this._saveLayout();
       this.$nextTick(() => this._resetView());
     },
 
@@ -605,23 +643,37 @@ createApp({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data }),
         });
-      } catch (err) { console.error('Save layout failed:', err); }
+      } catch (err) {
+        console.error('Save layout failed:', err);
+        _sendVueError(err?.message || String(err), 'saveLayout', err?.stack || '', 'warehouse.js:_saveLayout');
+      }
     },
 
     async _addItemToDB(payload) {
-      const resp = await fetch('/api/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const result = await resp.json();
-      return result.id;
+      try {
+        const resp = await fetch('/api/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const result = await resp.json();
+        return result.id;
+      } catch (err) {
+        console.error('Add item to DB failed:', err);
+        _sendVueError(err?.message || String(err), `addItemToDB: ${payload.item_id}`, err?.stack || '', 'warehouse.js:_addItemToDB');
+        throw err;
+      }
     },
 
     async _removeItemFromDB(dbId) {
       try {
-        await fetch(`/api/items/${dbId}`, { method: 'DELETE' });
-      } catch (err) { console.error('Delete item failed:', err); }
+        const resp = await fetch(`/api/items/${dbId}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      } catch (err) {
+        console.error('Delete item failed:', err);
+        _sendVueError(err?.message || String(err), `removeItemFromDB: id=${dbId}`, err?.stack || '', 'warehouse.js:_removeItemFromDB');
+      }
     },
 
     // ── Console log ──────────────────────────────────────────────────────────
@@ -764,17 +816,21 @@ createApp({
     zoomIn()    { const vr = this._vp.getBoundingClientRect(); this._zoomAt(1.25, vr.width/2, vr.height/2); },
     zoomOut()   { const vr = this._vp.getBoundingClientRect(); this._zoomAt(1/1.25, vr.width/2, vr.height/2); },
     resetView() {
-      this._currentZoom = 1;
       const vr = this._vp.getBoundingClientRect();
       // Guard: if viewport hasn't been laid out yet, defer and retry
       if (vr.width === 0 || vr.height === 0) {
         requestAnimationFrame(() => this.resetView());
         return;
       }
-      this._panX = (vr.width  - this._wh.offsetWidth)  / 2;
-      this._panY = (vr.height - this._wh.offsetHeight) / 2;
+      const pad    = 40;
+      const scaleX = (vr.width  - pad * 2) / this._wh.offsetWidth;
+      const scaleY = (vr.height - pad * 2) / this._wh.offsetHeight;
+      const scale  = Math.min(scaleX, scaleY, 1);
+      this._currentZoom = scale;
+      this._panX = (vr.width  - this._wh.offsetWidth  * scale) / 2;
+      this._panY = (vr.height - this._wh.offsetHeight * scale) / 2;
       this._applyTransform();
-      this.zoomText = '100%';
+      this.zoomText = `${Math.round(scale * 100)}%`;
     },
     _panToElement(el) {
       const elRect = el.getBoundingClientRect();
@@ -811,24 +867,34 @@ createApp({
         const target = this._pendingScrollEl;
         this._pendingScrollEl = null;
         requestAnimationFrame(() => {
-          let el = null;
+          let el = null, entity = null;
           if (target.zoneId !== undefined) {
             const zone = this._zones.find(z => z.id === target.zoneId);
-            if (zone) { zone.element.classList.add('zone-highlight'); el = zone.element; }
+            if (zone) { if (!target.navJump) zone.element.classList.add('zone-highlight'); el = zone.element; entity = zone; }
           } else {
             const pr = this._palletRacks.find(p => p.id === target.palletRackId);
             if (pr) {
               pr.element.classList.add('pallet-rack-highlight');
-              const sub = pr.subsections.find(s => s.id === target.subId);
-              if (sub) {
-                sub.element.classList.add('sub-highlight');
-                const shelf = sub.shelves.find(s => s.id === target.shelfId);
-                if (shelf && shelf.element) shelf.element.classList.add('shelf-highlight');
-                el = sub.element;
+              if (target.navJump) {
+                el = pr.element; entity = pr;
+              } else {
+                const sub = pr.subsections.find(s => s.id === target.subId);
+                if (sub) {
+                  sub.element.classList.add('sub-highlight');
+                  const shelf = sub.shelves.find(s => s.id === target.shelfId);
+                  if (shelf && shelf.element) shelf.element.classList.add('shelf-highlight');
+                  el = sub.element;
+                }
               }
             }
           }
-          if (el) this._panToElement(el);
+          if (el) {
+            if (target.navJump && entity) {
+              this._jumpToElement(el, entity.position.x, entity.position.y, entity.dimensions.width, entity.dimensions.height);
+            } else {
+              this._panToElement(el);
+            }
+          }
         });
       }
     },
@@ -1195,6 +1261,7 @@ createApp({
       if (this.f_zoneHideLabel) lblEl.style.display = 'none';
       this._zones.push(this._pz);
       this._attachZoneHandlers(this._pz);
+      this._refreshNavLists();
       this.statusText = `Zone "${label}" added.`;
       this._pz = null; this.m_zone = false;
       this._saveLayout();
@@ -1368,6 +1435,7 @@ createApp({
       this._palletRacks.push(this._pi);
       this._attachPalletRackHandlers(this._pi);
       this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
+      this._refreshNavLists();
       this.statusText = `${this._pi.label} added.`;
       this._pi = null; this.m_labels = false;
       this._saveLayout();
@@ -1996,6 +2064,7 @@ createApp({
           if (idx !== -1) this._zones.splice(idx, 1);
         }
         this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
+        this._refreshNavLists();
         this.statusText = `Deleted ${palletRacks.length + zones.length} entities.`;
         this._saveLayout();
         return;
@@ -2030,6 +2099,7 @@ createApp({
         this._clearAllSelection();
         this.statusText = `Zone "${entity.label}" deleted.`;
       }
+      this._refreshNavLists();
       this._saveLayout();
     },
 
@@ -2079,6 +2149,7 @@ createApp({
         const lbl = entity.element.querySelector('.zone-label');
         if (lbl) lbl.textContent = name;
       }
+      this._refreshNavLists();
       this._saveLayout();
       this.statusText = `"${name}" saved.`;
     },
@@ -2210,6 +2281,7 @@ createApp({
       if (this._editMode) this._createHandles(palletRack, 'pallet-rack');
 
       this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
+      this._refreshNavLists();
       this.statusText = `Pallet Rack "${name}" pasted.`;
       this.m_pastePalletRack = false;
       this._saveLayout();
@@ -2275,7 +2347,7 @@ createApp({
       this._zones.push(zone);
       this._attachZoneHandlers(zone);
       if (this._editMode) this._createHandles(zone, 'zone');
-
+      this._refreshNavLists();
       this.statusText = `Zone "${label}" pasted.`;
       this.m_pasteZone = false;
       this._saveLayout();
@@ -2494,6 +2566,78 @@ createApp({
         .forEach(el => el.classList.remove('pallet-rack-highlight','sub-highlight','shelf-highlight','zone-highlight'));
     },
 
+    // ── Navigation dropdowns ──────────────────────────────────────────────────
+
+    _refreshNavLists() {
+      const allPRs = [], allZones = [];
+      const multiWh = this._warehouses.length > 1;
+      for (let whIdx = 0; whIdx < this._warehouses.length; whIdx++) {
+        const wh      = this._warehouses[whIdx];
+        const isActive = whIdx === this._activeWhIdx;
+        const whLabel  = multiWh ? (wh.name || `Warehouse ${whIdx + 1}`) : '';
+        // Active warehouse: use live arrays; others: use serialized data stored on _warehouses
+        const prs   = isActive ? this._palletRacks : (wh.palletRacks || []);
+        const zones = isActive ? this._zones       : (wh.zones || []);
+        for (const pr of prs) {
+          allPRs.push({
+            id: pr.id, label: pr.label || '', row: pr.row || '',
+            whLabel, warehouseIdx: whIdx,
+            position: { ...pr.position }, dimensions: { ...pr.dimensions },
+          });
+        }
+        for (const zone of zones) {
+          allZones.push({
+            id: zone.id, label: zone.label || '',
+            whLabel, warehouseIdx: whIdx,
+            position: { ...zone.position }, dimensions: { ...zone.dimensions },
+          });
+        }
+      }
+      this.navPalletRacks = allPRs.sort((a, b) => a.label.localeCompare(b.label));
+      this.navZones       = allZones.sort((a, b) => a.label.localeCompare(b.label));
+    },
+
+    _jumpToElement(el, elX, elY, elW, elH) {
+      const vpRect  = this._vp.getBoundingClientRect();
+      const fitZoom = Math.min(
+        Math.max(
+          Math.min((vpRect.width * 0.65) / elW, (vpRect.height * 0.65) / elH),
+          0.2,
+        ),
+        3,
+      );
+      this._currentZoom = fitZoom;
+      this._panX = vpRect.width  / 2 - (elX + elW / 2) * fitZoom;
+      this._panY = vpRect.height / 2 - (elY + elH / 2) * fitZoom;
+      this._applyTransform();
+      this.zoomText = `${Math.round(fitZoom * 100)}%`;
+    },
+
+    jumpToPalletRack(entry) {
+      if (entry.warehouseIdx !== this._activeWhIdx) {
+        this._pendingScrollEl = { palletRackId: entry.id, navJump: true };
+        this.switchTab(entry.warehouseIdx);
+        return;
+      }
+      const pr = this._palletRacks.find(p => p.id === entry.id);
+      if (!pr) return;
+      this._clearHighlights();
+      pr.element.classList.add('pallet-rack-highlight');
+      this._jumpToElement(pr.element, pr.position.x, pr.position.y, pr.dimensions.width, pr.dimensions.height);
+    },
+
+    jumpToZone(entry) {
+      if (entry.warehouseIdx !== this._activeWhIdx) {
+        this._pendingScrollEl = { zoneId: entry.id, navJump: true };
+        this.switchTab(entry.warehouseIdx);
+        return;
+      }
+      const zone = this._zones.find(z => z.id === entry.id);
+      if (!zone) return;
+      this._clearHighlights();
+      this._jumpToElement(zone.element, zone.position.x, zone.position.y, zone.dimensions.width, zone.dimensions.height);
+    },
+
     // ── Multi-warehouse / Tabs ────────────────────────────────────────────────
 
     _syncTabs() {
@@ -2674,6 +2818,7 @@ createApp({
       (data.zones || []).forEach(d => this._rebuildZone(d));
 
       this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
+      this._refreshNavLists();
       // Use rAF to defer until after the browser has computed layout,
       // ensuring getBoundingClientRect() on the viewport returns correct dimensions.
       requestAnimationFrame(() => this._resetView());
@@ -2809,4 +2954,10 @@ createApp({
       this._attachZoneHandlers(zone);
     },
   },
-}).mount('#app');
+});
+
+_vueApp.config.errorHandler = function(err, _vm, info) {
+  _sendVueError(err?.message || String(err), info, err?.stack || '', 'vue:errorHandler');
+};
+
+_vueApp.mount('#app');
