@@ -9,3 +9,8 @@ wheels/
 # Virtual environments
 .venv
 warehouse.sqlite
+
+
+# logs
+backend_errors.log
+vue_errors.log
