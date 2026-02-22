@@ -42,9 +42,9 @@ def init_db():
             location_type      TEXT NOT NULL DEFAULT 'shelf',
             warehouse_id       INTEGER,
             warehouse_name     TEXT DEFAULT '',
-            isle_id            INTEGER,
-            isle_label         TEXT DEFAULT '',
-            isle_row           TEXT DEFAULT '',
+            pallet_rack_id     INTEGER,
+            pallet_rack_label  TEXT DEFAULT '',
+            pallet_rack_row    TEXT DEFAULT '',
             subsection_id      INTEGER,
             subsection_number  INTEGER,
             shelf_id           INTEGER,
@@ -74,6 +74,14 @@ def init_db():
         conn.execute("ALTER TABLE items ADD COLUMN url TEXT DEFAULT ''")
     if "tags" not in existing_cols:
         conn.execute("ALTER TABLE items ADD COLUMN tags TEXT DEFAULT ''")
+    if "subsection_name" not in existing_cols:
+        conn.execute("ALTER TABLE items ADD COLUMN subsection_name TEXT DEFAULT ''")
+    if "isle_id" in existing_cols and "pallet_rack_id" not in existing_cols:
+        conn.execute("ALTER TABLE items RENAME COLUMN isle_id TO pallet_rack_id")
+    if "isle_label" in existing_cols and "pallet_rack_label" not in existing_cols:
+        conn.execute("ALTER TABLE items RENAME COLUMN isle_label TO pallet_rack_label")
+    if "isle_row" in existing_cols and "pallet_rack_row" not in existing_cols:
+        conn.execute("ALTER TABLE items RENAME COLUMN isle_row TO pallet_rack_row")
     conn.commit()
     conn.close()
 
@@ -217,11 +225,12 @@ class ItemBody(BaseModel):
     location_type: str = "shelf"
     warehouse_id: Optional[int] = None
     warehouse_name: str = ""
-    isle_id: Optional[int] = None
-    isle_label: str = ""
-    isle_row: str = ""
+    pallet_rack_id: Optional[int] = None
+    pallet_rack_label: str = ""
+    pallet_rack_row: str = ""
     subsection_id: Optional[int] = None
     subsection_number: Optional[int] = None
+    subsection_name: str = ""
     shelf_id: Optional[int] = None
     shelf_label: str = ""
     zone_id: Optional[int] = None
@@ -238,8 +247,8 @@ def search_items(
     notes: str = "",
     url: str = "",
     warehouse_name: str = "",
-    isle_row: str = "",
-    isle_label: str = "",
+    pallet_rack_row: str = "",
+    pallet_rack_label: str = "",
     shelf_label: str = "",
     zone_label: str = "",
     location_type: str = "",
@@ -255,7 +264,7 @@ def search_items(
         conditions.append(
             "(LOWER(item_id) LIKE ? OR LOWER(item_type) LIKE ? OR LOWER(category) LIKE ?"
             " OR LOWER(notes) LIKE ? OR LOWER(url) LIKE ? OR LOWER(tags) LIKE ?"
-            " OR LOWER(warehouse_name) LIKE ? OR LOWER(isle_label) LIKE ?"
+            " OR LOWER(warehouse_name) LIKE ? OR LOWER(pallet_rack_label) LIKE ?"
             " OR LOWER(shelf_label) LIKE ? OR LOWER(zone_label) LIKE ?)"
         )
         params.extend([like] * 10)
@@ -263,8 +272,8 @@ def search_items(
     for col, val in [
         ("item_id", item_id), ("item_type", item_type), ("category", category),
         ("tags", tags), ("notes", notes), ("url", url),
-        ("warehouse_name", warehouse_name), ("isle_row", isle_row),
-        ("isle_label", isle_label), ("shelf_label", shelf_label),
+        ("warehouse_name", warehouse_name), ("pallet_rack_row", pallet_rack_row),
+        ("pallet_rack_label", pallet_rack_label), ("shelf_label", shelf_label),
         ("zone_label", zone_label),
     ]:
         if val:
@@ -299,18 +308,18 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
         INSERT INTO items (
             item_id, item_type, category, notes, url, tags, added_at,
             location_type, warehouse_id, warehouse_name,
-            isle_id, isle_label, isle_row,
-            subsection_id, subsection_number,
+            pallet_rack_id, pallet_rack_label, pallet_rack_row,
+            subsection_id, subsection_number, subsection_name,
             shelf_id, shelf_label,
             zone_id, zone_label
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             body.item_id, body.item_type, body.category, body.notes,
             body.url, body.tags, added_at,
             body.location_type, body.warehouse_id, body.warehouse_name,
-            body.isle_id, body.isle_label, body.isle_row,
-            body.subsection_id, body.subsection_number,
+            body.pallet_rack_id, body.pallet_rack_label, body.pallet_rack_row,
+            body.subsection_id, body.subsection_number, body.subsection_name,
             body.shelf_id, body.shelf_label,
             body.zone_id, body.zone_label,
         ),
@@ -321,17 +330,34 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
     return {"id": new_id}
 
 
-class IsleRelabelBody(BaseModel):
-    isle_label: str
-    isle_row: str
+class PalletRackRelabelBody(BaseModel):
+    pallet_rack_label: str
+    pallet_rack_row: str
 
 
-@app.patch("/api/items/isle/{isle_id}/label")
-def relabel_isle_items(isle_id: int, body: IsleRelabelBody, user: dict = Depends(get_current_user)):
+@app.patch("/api/items/pallet-rack/{pallet_rack_id}/label")
+def relabel_pallet_rack_items(pallet_rack_id: int, body: PalletRackRelabelBody, user: dict = Depends(get_current_user)):
     conn = get_db()
     conn.execute(
-        "UPDATE items SET isle_label=?, isle_row=? WHERE isle_id=?",
-        (body.isle_label, body.isle_row, isle_id),
+        "UPDATE items SET pallet_rack_label=?, pallet_rack_row=? WHERE pallet_rack_id=?",
+        (body.pallet_rack_label, body.pallet_rack_row, pallet_rack_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+class RenameWarehouseBody(BaseModel):
+    old_name: str
+    new_name: str
+
+
+@app.patch("/api/items/rename-warehouse")
+def rename_warehouse_items(body: RenameWarehouseBody, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    conn.execute(
+        "UPDATE items SET warehouse_name = ? WHERE warehouse_name = ?",
+        (body.new_name, body.old_name),
     )
     conn.commit()
     conn.close()
@@ -342,11 +368,12 @@ class MoveItemBody(BaseModel):
     location_type: str = "shelf"
     warehouse_id: Optional[int] = None
     warehouse_name: str = ""
-    isle_id: Optional[int] = None
-    isle_label: str = ""
-    isle_row: str = ""
+    pallet_rack_id: Optional[int] = None
+    pallet_rack_label: str = ""
+    pallet_rack_row: str = ""
     subsection_id: Optional[int] = None
     subsection_number: Optional[int] = None
+    subsection_name: str = ""
     shelf_id: Optional[int] = None
     shelf_label: str = ""
     zone_id: Optional[int] = None
@@ -359,15 +386,15 @@ def move_item(item_db_id: int, body: MoveItemBody, user: dict = Depends(get_curr
     conn.execute(
         """UPDATE items SET
             location_type=?, warehouse_id=?, warehouse_name=?,
-            isle_id=?, isle_label=?, isle_row=?,
-            subsection_id=?, subsection_number=?,
+            pallet_rack_id=?, pallet_rack_label=?, pallet_rack_row=?,
+            subsection_id=?, subsection_number=?, subsection_name=?,
             shelf_id=?, shelf_label=?,
             zone_id=?, zone_label=?
            WHERE id=?""",
         (
             body.location_type, body.warehouse_id, body.warehouse_name,
-            body.isle_id, body.isle_label, body.isle_row,
-            body.subsection_id, body.subsection_number,
+            body.pallet_rack_id, body.pallet_rack_label, body.pallet_rack_row,
+            body.subsection_id, body.subsection_number, body.subsection_name,
             body.shelf_id, body.shelf_label,
             body.zone_id, body.zone_label,
             item_db_id,

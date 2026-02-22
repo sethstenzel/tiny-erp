@@ -28,16 +28,6 @@
         <button class="btn-search" @click="runSearch">Search</button>
         <button class="btn-clear-search" v-show="showSearchResults" @click="clearSearch">Clear</button>
       </div>
-      <div class="search-results" :class="{ hidden: !showSearchResults }">
-        <div v-if="searchResults.length === 0" class="search-result-card not-found">
-          No item found matching "<strong>{{ searchQuery }}</strong>"
-        </div>
-        <div v-for="(result, idx) in searchResults" :key="idx"
-             class="search-result-card" :style="result.cardStyle"
-             @click="scrollToResult(result)" style="cursor:pointer">
-          <div class="result-line" v-html="result.html"></div>
-        </div>
-      </div>
     </div>
     <div class="brand-name">IndSurp</div>
     <a class="btn-search-page" href="/search" target="_blank">Item Search</a>
@@ -91,29 +81,29 @@
       {{ menuCollapsed ? '&#x2039;' : '&#x203A;' }}
     </button>
     <h3>Warehouse Tools</h3>
-    <button v-if="isAdmin" class="btn-add-isle" :class="{ active: addIsleActive }" @click="activateDrawMode">Add Isle</button>
+    <button v-if="isAdmin" class="btn-add-pallet-rack" :class="{ active: addPalletRackActive }" @click="activateDrawMode">Add Pallet Rack</button>
     <button v-if="isAdmin" class="btn-add-zone" :class="{ active: addZoneActive }" @click="activateZoneMode">Add Zone</button>
-    <button v-if="isAdmin" class="btn-edit-warehouse" :class="{ active: editActive }" @click="activateEditMode">Edit Warehouse</button>
+    <button v-if="isAdmin" class="btn-edit-warehouse" @click="activateEditMode">{{ editActive ? 'Finish Editing' : 'Edit Warehouse' }}</button>
     <button class="btn-delete-entity" v-show="isAdmin && showDelEntBtn" @click="deleteSelectedEntity">&#x1F5D1; Delete Selected</button>
     <hr style="border:none;border-top:1px solid #334155;margin:4px 0;">
     <button v-if="isAdmin" class="btn-add-bg" @click="triggerBgImport">Add Background</button>
     <button v-if="isAdmin" class="btn-clear-bg" v-show="hasBg" @click="clearBackground">Clear Background</button>
     <input v-if="isAdmin" type="file" ref="bgFileInput" accept="image/png,image/jpeg" style="display:none" @change="handleBgFile">
     <div class="status-msg">{{ statusText }}</div>
-    <div class="isle-count">{{ isleCountText }}</div>
+    <div class="pallet-rack-count">{{ palletRackCountText }}</div>
 
-    <!-- Inspector panel — shown when an isle or zone is selected in edit mode -->
+    <!-- Inspector panel — shown when a pallet rack or zone is selected in edit mode -->
     <template v-if="insp_show">
       <hr style="border:none;border-top:1px solid #334155;margin:2px 0;">
       <div class="insp-panel">
-        <div class="insp-title">{{ insp_type === 'isle' ? 'Isle' : 'Zone' }}</div>
+        <div class="insp-title">{{ insp_type === 'pallet-rack' ? 'Pallet Rack' : 'Zone' }}</div>
         <div class="insp-field">
           <label class="insp-lbl">Name</label>
           <input class="insp-input" type="text" v-model="insp_name"
                  :style="insp_nameError ? 'border-color:#ef4444' : ''"
                  @keydown.enter="applyInspectorLabel" />
         </div>
-        <div class="insp-field" v-if="insp_type === 'isle'">
+        <div class="insp-field" v-if="insp_type === 'pallet-rack'">
           <label class="insp-lbl">Row</label>
           <input class="insp-input" type="text" v-model="insp_row"
                  @keydown.enter="applyInspectorLabel" />
@@ -128,12 +118,12 @@
           <input type="color" v-model="insp_labelColor" class="insp-color-pick"
                  @change="saveLayout" />
         </div>
-        <div class="insp-field" v-if="insp_type === 'isle'">
+        <div class="insp-field" v-if="insp_type === 'pallet-rack'">
           <label class="insp-lbl">Fill color</label>
           <input type="color" v-model="insp_fillColor" class="insp-color-pick"
                  @change="saveLayout" />
         </div>
-        <div class="insp-field" v-if="insp_type === 'isle'">
+        <div class="insp-field" v-if="insp_type === 'pallet-rack'">
           <label class="insp-lbl">Shelf Order</label>
           <div class="insp-facing-group">
             <button type="button" class="facing-opt" :class="{ selected: insp_shelfOrder === 'right' }"
@@ -147,6 +137,10 @@
           <input type="range" v-model.number="insp_fillOpacity" min="0" max="100"
                  class="insp-range" @change="saveLayout" />
         </div>
+        <label v-if="insp_type === 'pallet-rack'" class="insp-flag-label">
+          <input type="checkbox" v-model="insp_hideHeader" class="insp-flag-cb" />
+          Hide name &amp; row
+        </label>
         <label v-if="insp_type === 'zone'" class="insp-flag-label">
           <input type="checkbox" v-model="insp_hideLabel" class="insp-flag-cb" @change="saveLayout" />
           Hide label
@@ -167,21 +161,21 @@
     <div style="font-size:11px;color:#475569;text-align:center;">{{ zoomText }}</div>
   </div>
 
-  <!-- ══ STEP 1: Isle name + shelves per subsection ══ -->
+  <!-- ══ STEP 1: Pallet Rack name + shelves per subsection ══ -->
   <div class="modal-overlay" v-show="m_count">
     <div class="modal">
-      <button class="modal-close" @click="cancelIsleCreation" title="Close">&#x2715;</button>
-      <p class="modal-title">New Isle</p>
-      <p class="modal-subtitle">Name this isle and set how many shelves each subsection will have.</p>
+      <button class="modal-close" @click="cancelPalletRackCreation" title="Close">&#x2715;</button>
+      <p class="modal-title">New Pallet Rack</p>
+      <p class="modal-subtitle">Name this pallet rack and set how many shelves each subsection will have.</p>
       <div class="two-col">
         <div class="form-field" style="flex:0 0 80px">
           <label>Row</label>
-          <input type="text" v-model="f_isleRow" placeholder="e.g. A" maxlength="10" />
+          <input type="text" v-model="f_palletRackRow" placeholder="e.g. A" maxlength="10" />
         </div>
         <div class="form-field">
-          <label>Isle Name <span style="color:#e53935">*</span></label>
-          <input type="text" v-model="f_isleName" placeholder="e.g. Aisle 1, Electronics Row"
-                 ref="isleNameInput" :style="isleNameError ? 'border-color:#e53935' : ''" />
+          <label>Pallet Rack Name <span style="color:#e53935">*</span></label>
+          <input type="text" v-model="f_palletRackName" placeholder="e.g. Aisle 1, Electronics Row"
+                 ref="palletRackNameInput" :style="palletRackNameError ? 'border-color:#e53935' : ''" />
         </div>
       </div>
       <div class="form-field">
@@ -190,16 +184,16 @@
       </div>
       <div class="two-col">
         <div class="form-field">
-          <label>Isle Border Color</label>
+          <label>Pallet Rack Border Color</label>
           <div class="color-pick-row">
-            <input type="color" v-model="f_isleColor" />
-            <span class="color-pick-hint">Isle border</span>
+            <input type="color" v-model="f_palletRackColor" />
+            <span class="color-pick-hint">Pallet rack border</span>
           </div>
         </div>
         <div class="form-field">
-          <label>Isle Name Color</label>
+          <label>Pallet Rack Name Color</label>
           <div class="color-pick-row">
-            <input type="color" v-model="f_isleLabelColor" />
+            <input type="color" v-model="f_palletRackLabelColor" />
             <span class="color-pick-hint">Name label</span>
           </div>
         </div>
@@ -213,28 +207,28 @@
           </div>
         </div>
         <div class="form-field">
-          <label>Isle Fill Color</label>
+          <label>Pallet Rack Fill Color</label>
           <div class="color-pick-row">
-            <input type="color" v-model="f_isleFillColor" />
+            <input type="color" v-model="f_palletRackFillColor" />
             <span class="color-pick-hint">Inner fill</span>
           </div>
         </div>
       </div>
       <div class="form-field">
-        <label>Isle Fill Opacity <span style="font-weight:400;color:#888;">{{ f_isleFillOpacity }}%</span></label>
-        <input type="range" v-model.number="f_isleFillOpacity" min="0" max="100" style="width:100%;margin-top:4px;">
+        <label>Pallet Rack Fill Opacity <span style="font-weight:400;color:#888;">{{ f_palletRackFillOpacity }}%</span></label>
+        <input type="range" v-model.number="f_palletRackFillOpacity" min="0" max="100" style="width:100%;margin-top:4px;">
       </div>
       <div class="form-field">
         <label>Shelf Order</label>
         <div class="facing-group">
-          <button type="button" class="facing-opt" :class="{ selected: f_isleFacing === 'right' }"
-                  @click="f_isleFacing = 'right'">Left → Right<br><span style="font-size:10px;font-weight:400;">First shelf on the left</span></button>
-          <button type="button" class="facing-opt" :class="{ selected: f_isleFacing === 'left' }"
-                  @click="f_isleFacing = 'left'">Right → Left<br><span style="font-size:10px;font-weight:400;">First shelf on the right</span></button>
+          <button type="button" class="facing-opt" :class="{ selected: f_palletRackFacing === 'right' }"
+                  @click="f_palletRackFacing = 'right'">Left → Right<br><span style="font-size:10px;font-weight:400;">First shelf on the left</span></button>
+          <button type="button" class="facing-opt" :class="{ selected: f_palletRackFacing === 'left' }"
+                  @click="f_palletRackFacing = 'left'">Right → Left<br><span style="font-size:10px;font-weight:400;">First shelf on the right</span></button>
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" @click="cancelIsleCreation">Cancel</button>
+        <button class="btn-cancel" @click="cancelPalletRackCreation">Cancel</button>
         <button class="btn-confirm" @click="confirmStep1">Next →</button>
       </div>
     </div>
@@ -243,7 +237,7 @@
   <!-- ══ STEP 2: Subsection config ══ -->
   <div class="modal-overlay" v-show="m_subs">
     <div class="modal">
-      <button class="modal-close" @click="cancelIsleCreation" title="Close">&#x2715;</button>
+      <button class="modal-close" @click="cancelPalletRackCreation" title="Close">&#x2715;</button>
       <p class="modal-title">{{ mc_subConfigTitle }}</p>
       <p class="modal-subtitle">Set how many subsections and where the numbering starts.</p>
       <div class="two-col">
@@ -266,9 +260,9 @@
   <!-- ══ STEP 3: Label shelves ══ -->
   <div class="modal-overlay" v-show="m_labels">
     <div class="modal">
-      <button class="modal-close" @click="cancelIsleCreation" title="Close">&#x2715;</button>
+      <button class="modal-close" @click="cancelPalletRackCreation" title="Close">&#x2715;</button>
       <p class="modal-title">{{ mc_labelsTitle }}</p>
-      <p class="modal-subtitle">These labels apply to every subsection in the isle.</p>
+      <p class="modal-subtitle">These labels apply to every subsection in the pallet rack.</p>
       <div class="shelf-list">
         <div v-for="(shelf, idx) in f_shelfLabelsList" :key="idx" class="shelf-row">
           <span class="shelf-num">Shelf {{ idx + 1 }}</span>
@@ -300,13 +294,12 @@
     </div>
   </div>
 
-  <!-- ══ Subsection actions ══ -->
-  <div class="modal-overlay" v-show="m_subAct">
+  <!-- ══ Select shelf ══ -->
+  <div class="modal-overlay" v-show="m_shelfSel">
     <div class="modal">
       <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
-      <p class="modal-title">{{ mc_subActTitle }}</p>
-      <p class="modal-subtitle">{{ mc_subActSub }}</p>
-      <div class="form-field" v-if="isAdmin || f_subName" style="margin-bottom:4px;">
+      <p class="modal-title">{{ mc_shelfSelTitle }}</p>
+      <div class="form-field" v-if="isAdmin || f_subName" style="margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <label style="margin:0;font-size:12px;color:#94a3b8;font-weight:500;">Subsection Name</label>
           <button v-if="isAdmin" class="btn-sub-unlock" @click="unlockSubName"
@@ -319,22 +312,9 @@
                :style="subNameError ? 'border-color:#e53935' : ''"
                placeholder="Optional name..."
                @keydown.enter="saveSubName" ref="subNameInput" />
+        <button v-if="isAdmin && !subNameLocked" class="btn-confirm"
+                style="margin-top:6px;width:100%;" @click="saveSubName">Save Name</button>
       </div>
-      <div class="modal-actions" style="justify-content:space-between;">
-        <button class="btn-cancel" @click="backFromSubAct">← Back</button>
-        <div style="display:flex;gap:8px;">
-          <button v-if="isAdmin && !subNameLocked" class="btn-confirm" @click="saveSubName">Save Name</button>
-          <button class="btn-confirm" @click="proceedToShelves">View Shelves →</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ Select shelf ══ -->
-  <div class="modal-overlay" v-show="m_shelfSel">
-    <div class="modal">
-      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
-      <p class="modal-title">{{ mc_shelfSelTitle }}</p>
       <p class="modal-subtitle">Click a shelf to manage its items.</p>
       <div class="select-list">
         <div v-for="shelf in mc_shelfSelList" :key="shelf.id" class="select-row" @click="selectShelfFromList(shelf)">
@@ -344,6 +324,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" @click="backToSubsectionSelect">← Back</button>
+        <button v-if="isAdmin" class="btn-danger" @click="openDeleteSub">Delete Sub</button>
         <button v-if="isAdmin" class="btn-confirm" @click="openAddShelf">+ Add Shelf</button>
       </div>
     </div>
@@ -389,8 +370,14 @@
                 style="margin-top:6px;width:100%;" @click="saveShelfName">Save Label</button>
       </div>
       <div class="action-btn-group">
+        <button class="action-btn view" @click="openViewItems">
+          <span class="action-icon">☰</span>View Items
+        </button>
         <button class="action-btn add" @click="openAddItem">
           <span class="action-icon">＋</span>Add Item
+        </button>
+        <button class="action-btn bulk" @click="openBulkAdd">
+          <span class="action-icon">⊞</span>Bulk Add
         </button>
         <button class="action-btn rem" @click="openRemoveItems">
           <span class="action-icon">－</span>Remove Item
@@ -439,6 +426,92 @@
       <div class="modal-actions">
         <button class="btn-cancel" @click="backFromAddItem">← Back</button>
         <button class="btn-confirm" @click="confirmAddItem">Add Item</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Bulk add items ══ -->
+  <div class="modal-overlay" v-show="m_bulkAdd">
+    <div class="modal">
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">Bulk Add Items</p>
+      <p class="modal-subtitle">{{ mc_addItemSub }}</p>
+      <p style="font-size:11px;color:#64748b;margin:0 0 6px;">
+        One item per line: <code style="color:#94a3b8;">ID;Type;Category;Tags;URL;Notes</code>
+      </p>
+      <div class="form-field">
+        <textarea ref="bulkAddInput" v-model="f_bulkText" rows="8"
+                  placeholder="1234;electronics;accessories;fragile,hazmat;https://example.com;notes here&#10;4321;plumbing;fittings;;;another note"
+                  style="font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+      </div>
+      <p v-if="bulkAddError" style="color:#ef4444;font-size:12px;white-space:pre-line;margin:4px 0 0;">{{ bulkAddError }}</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="m_bulkAdd = false; m_shelfAct = true">← Back</button>
+        <button class="btn-confirm" @click="confirmBulkAdd">Add Items</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ View items ══ -->
+  <div class="modal-overlay" v-show="m_viewItems">
+    <div class="modal">
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_shelfActTitle }}</p>
+      <p class="modal-subtitle">{{ mc_itemList.length }} item{{ mc_itemList.length !== 1 ? 's' : '' }}</p>
+      <div class="item-list">
+        <p v-if="mc_itemList.length === 0" class="no-items-msg">No items on this shelf.</p>
+        <div v-for="item in mc_itemList" :key="item.id" class="item-row view-row"
+             @click="openItemDetail(item)">
+          <div class="view-row-main">
+            <span class="item-id-label">{{ item.itemId }}</span>
+            <span class="item-meta">{{ [item.type, item.category].filter(Boolean).join(' · ') || '—' }}</span>
+          </div>
+          <div class="item-tooltip">
+            <div><strong>ID:</strong> {{ item.itemId }}</div>
+            <div v-if="item.type"><strong>Type:</strong> {{ item.type }}</div>
+            <div v-if="item.category"><strong>Category:</strong> {{ item.category }}</div>
+            <div v-if="item.tags"><strong>Tags:</strong> {{ item.tags }}</div>
+            <div v-if="item.url"><strong>URL:</strong> {{ item.url }}</div>
+            <div v-if="item.notes"><strong>Notes:</strong> {{ item.notes }}</div>
+            <div v-if="item.addedAt"><strong>Added:</strong> {{ new Date(item.addedAt).toLocaleDateString() }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="m_viewItems = false; m_shelfAct = true">← Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Item detail ══ -->
+  <div class="modal-overlay" v-show="m_itemDetail && mc_activeItem">
+    <div class="modal" v-if="mc_activeItem">
+      <button class="modal-close" @click="m_itemDetail = false" title="Close">&#x2715;</button>
+      <p class="modal-title">{{ mc_activeItem.itemId }}</p>
+      <div class="item-detail-grid">
+        <template v-if="mc_activeItem.type">
+          <span class="detail-lbl">Type</span><span class="detail-val">{{ mc_activeItem.type }}</span>
+        </template>
+        <template v-if="mc_activeItem.category">
+          <span class="detail-lbl">Category</span><span class="detail-val">{{ mc_activeItem.category }}</span>
+        </template>
+        <template v-if="mc_activeItem.tags">
+          <span class="detail-lbl">Tags</span><span class="detail-val">{{ mc_activeItem.tags }}</span>
+        </template>
+        <template v-if="mc_activeItem.url">
+          <span class="detail-lbl">URL</span>
+          <span class="detail-val"><a :href="mc_activeItem.url" target="_blank" rel="noopener noreferrer">{{ mc_activeItem.url }}</a></span>
+        </template>
+        <template v-if="mc_activeItem.notes">
+          <span class="detail-lbl">Notes</span><span class="detail-val">{{ mc_activeItem.notes }}</span>
+        </template>
+        <template v-if="mc_activeItem.addedAt">
+          <span class="detail-lbl">Added</span><span class="detail-val">{{ new Date(mc_activeItem.addedAt).toLocaleString() }}</span>
+        </template>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="m_itemDetail = false">← Back</button>
+        <button class="btn-danger" @click="deleteViewItem">Delete Item</button>
       </div>
     </div>
   </div>
@@ -503,20 +576,32 @@
     </div>
   </div>
 
-  <!-- ══ Paste isle ══ -->
-  <div class="modal-overlay" v-show="m_pasteIsle">
+  <!-- ══ Confirm delete subsection ══ -->
+  <div class="modal-overlay" v-show="m_confDelSub">
     <div class="modal">
-      <button class="modal-close" @click="m_pasteIsle = false" title="Close">&#x2715;</button>
-      <p class="modal-title">Paste Isle</p>
-      <p class="modal-subtitle">{{ mc_pasteIsleSub }}</p>
+      <p class="modal-title">Delete Subsection?</p>
+      <p class="modal-subtitle">{{ mc_confDelSubMsg }}</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="m_confDelSub = false">No, Keep It</button>
+        <button class="btn-danger" @click="confirmDeleteSub">Yes, Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Paste pallet rack ══ -->
+  <div class="modal-overlay" v-show="m_pastePalletRack">
+    <div class="modal">
+      <button class="modal-close" @click="m_pastePalletRack = false" title="Close">&#x2715;</button>
+      <p class="modal-title">Paste Pallet Rack</p>
+      <p class="modal-subtitle">{{ mc_pastePalletRackSub }}</p>
       <div class="form-field">
-        <label>New Isle Name <span style="color:#e53935">*</span></label>
-        <input type="text" v-model="f_pasteIsleName" placeholder="Enter a name for the pasted isle"
-               :style="pasteIsleNameError ? 'border-color:#e53935' : ''" ref="pasteIsleInput" />
+        <label>New Pallet Rack Name <span style="color:#e53935">*</span></label>
+        <input type="text" v-model="f_pastePalletRackName" placeholder="Enter a name for the pasted pallet rack"
+               :style="pastePalletRackNameError ? 'border-color:#e53935' : ''" ref="pastePalletRackInput" />
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" @click="m_pasteIsle = false">Cancel</button>
-        <button class="btn-confirm" @click="pasteIsle">Paste</button>
+        <button class="btn-cancel" @click="m_pastePalletRack = false">Cancel</button>
+        <button class="btn-confirm" @click="pastePalletRack">Paste</button>
       </div>
     </div>
   </div>
@@ -540,7 +625,7 @@
     </div>
   </div>
 
-  <!-- ══ Delete isle / zone ══ -->
+  <!-- ══ Delete pallet rack / zone ══ -->
   <div class="modal-overlay" v-show="m_delEnt">
     <div class="modal">
       <p class="modal-title">{{ mc_delEntTitle }}</p>
@@ -583,16 +668,16 @@
       <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
       <p class="modal-title">Move {{ mc_selCount }} Item{{ mc_selCount !== 1 ? 's' : '' }}</p>
       <p class="modal-subtitle" style="margin-bottom:4px">From: {{ mv_srcLabel }}</p>
-      <p class="modal-subtitle" v-if="mv_step === 'isle'">Select destination isle</p>
+      <p class="modal-subtitle" v-if="mv_step === 'pallet-rack'">Select destination pallet rack</p>
       <p class="modal-subtitle" v-if="mv_step === 'sub'">Select destination subsection</p>
       <p class="modal-subtitle" v-if="mv_step === 'shelf'">Select destination shelf</p>
 
-      <!-- Step 1: isle list -->
-      <div class="select-list" v-if="mv_step === 'isle'">
-        <p v-if="mv_isles.length === 0" class="no-items-msg">No isles in this warehouse.</p>
-        <div v-for="isle in mv_isles" :key="isle.id" class="select-row" @click="mvPickIsle(isle)">
-          <span class="row-name">{{ isle.label }}</span>
-          <span class="row-meta" v-if="isle.row">Row {{ isle.row }}</span>
+      <!-- Step 1: pallet rack list -->
+      <div class="select-list" v-if="mv_step === 'pallet-rack'">
+        <p v-if="mv_palletRacks.length === 0" class="no-items-msg">No pallet racks in this warehouse.</p>
+        <div v-for="palletRack in mv_palletRacks" :key="palletRack.id" class="select-row" @click="mvPickPalletRack(palletRack)">
+          <span class="row-name">{{ palletRack.label }}</span>
+          <span class="row-meta" v-if="palletRack.row">Row {{ palletRack.row }}</span>
         </div>
       </div>
 
@@ -663,6 +748,27 @@
         <button class="btn-cancel" @click="backToZoneActions">← Back</button>
         <button class="btn-danger" :disabled="mc_zoneSelCount === 0" @click="confirmRemoveZoneItems">Remove Selected</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ── Search results strip ── -->
+  <div class="search-results" :class="{ hidden: !showSearchResults || searchResults.length === 0 }">
+    <div v-for="(result, idx) in searchResults" :key="idx"
+         class="search-result-card" :style="result.cardStyle">
+      <div class="result-line" v-html="result.html" @click="scrollToResult(result)" style="cursor:pointer;flex:1;min-width:0;"></div>
+      <button v-if="result.item && result.shelf" class="btn-result-view"
+              @click.stop="openItemDetailFromSearch(result.item, result.shelf)">View</button>
+    </div>
+  </div>
+
+  <!-- ── Console log strip ── -->
+  <div class="app-console" ref="consoleEl">
+    <div v-for="(entry, i) in consoleLogs" :key="i" class="console-entry" :class="entry.type">
+      <span class="console-time">{{ entry.time }}</span>
+      <span class="console-msg">{{ entry.text }}</span>
+    </div>
+    <div v-if="consoleLogs.length === 0" class="console-entry console-placeholder">
+      Console ready.
     </div>
   </div>
 

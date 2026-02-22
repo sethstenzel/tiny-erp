@@ -206,6 +206,49 @@
     .empty-state .hint { font-size: 12px; color: #334155; margin-top: 8px; }
 
     .state-initial .icon { opacity: 0.3; }
+
+    /* ── Delete row button ── */
+    .cell-actions { white-space: nowrap; vertical-align: middle; }
+    .btn-delete-row {
+      padding: 4px 10px; background: transparent; color: #f87171;
+      border: 1px solid #7f1d1d; border-radius: 6px;
+      font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .btn-delete-row:hover { background: #7f1d1d; color: #fca5a5; border-color: #ef4444; }
+
+    /* ── Confirm delete modal ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.65); align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .confirm-modal {
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      padding: 28px 28px 22px; max-width: 380px; width: 90%;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    }
+    .confirm-modal-title {
+      font-size: 16px; font-weight: 700; color: #e2e8f0; margin-bottom: 10px;
+    }
+    .confirm-modal-msg {
+      font-size: 13px; color: #94a3b8; margin-bottom: 22px; line-height: 1.5;
+    }
+    .confirm-modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn-confirm-cancel {
+      padding: 7px 16px; background: transparent; color: #94a3b8;
+      border: 1px solid #334155; border-radius: 7px;
+      font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-confirm-cancel:hover { color: #e2e8f0; border-color: #64748b; }
+    .btn-confirm-delete {
+      padding: 7px 16px; background: #991b1b; color: #fca5a5;
+      border: 1px solid #b91c1c; border-radius: 7px;
+      font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-confirm-delete:hover { background: #7f1d1d; }
   </style>
 </head>
 <body>
@@ -282,12 +325,12 @@
           <input type="text" id="f_warehouse_name" placeholder="e.g. Main Warehouse" />
         </div>
         <div class="filter-field">
-          <label>Isle Row</label>
-          <input type="text" id="f_isle_row" placeholder="e.g. A" />
+          <label>Pallet Rack Row</label>
+          <input type="text" id="f_pallet_rack_row" placeholder="e.g. A" />
         </div>
         <div class="filter-field">
-          <label>Isle Label</label>
-          <input type="text" id="f_isle_label" placeholder="e.g. Electronics Row" />
+          <label>Pallet Rack Label</label>
+          <input type="text" id="f_pallet_rack_label" placeholder="e.g. Electronics Row" />
         </div>
         <div class="filter-field">
           <label>Shelf Label</label>
@@ -332,6 +375,18 @@
 
   </div>
 
+  <!-- Confirm delete modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="confirm-modal">
+      <div class="confirm-modal-title">Delete Item</div>
+      <div class="confirm-modal-msg" id="deleteModalMsg"></div>
+      <div class="confirm-modal-actions">
+        <button class="btn-confirm-cancel" id="deleteCancelBtn">Cancel</button>
+        <button class="btn-confirm-delete" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ── Auth ──────────────────────────────────────────────────────────────────
     let currentUser = null;
@@ -366,9 +421,9 @@
       add('f_url',            'url');
       add('f_notes',          'notes');
       add('f_location_type',  'location_type');
-      add('f_warehouse_name', 'warehouse_name');
-      add('f_isle_row',       'isle_row');
-      add('f_isle_label',     'isle_label');
+      add('f_warehouse_name',    'warehouse_name');
+      add('f_pallet_rack_row',   'pallet_rack_row');
+      add('f_pallet_rack_label', 'pallet_rack_label');
       add('f_shelf_label',    'shelf_label');
       add('f_zone_label',     'zone_label');
       add('f_date_from',      'date_from');
@@ -378,7 +433,7 @@
 
     function clearAll() {
       ['q','f_item_id','f_item_type','f_category','f_tags','f_url','f_notes',
-       'f_warehouse_name','f_isle_row','f_isle_label','f_shelf_label','f_zone_label',
+       'f_warehouse_name','f_pallet_rack_row','f_pallet_rack_label','f_shelf_label','f_zone_label',
        'f_date_from','f_date_to'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('f_location_type').value = '';
       document.getElementById('searchStatus').textContent = '';
@@ -408,9 +463,10 @@
       }
       const parts = [];
       if (item.warehouse_name) parts.push(item.warehouse_name);
-      if (item.isle_row)        parts.push(`Row ${item.isle_row}`);
-      if (item.isle_label)      parts.push(item.isle_label);
-      if (item.subsection_number != null) parts.push(`Sub ${item.subsection_number}`);
+      if (item.pallet_rack_row)   parts.push(`Row ${item.pallet_rack_row}`);
+      if (item.pallet_rack_label) parts.push(item.pallet_rack_label);
+      if (item.subsection_number != null)
+        parts.push(item.subsection_name || `Sub ${item.subsection_number}`);
       if (item.shelf_label)     parts.push(item.shelf_label);
       return `<div class="loc-path">
         <span class="loc-type">Shelf</span>
@@ -444,7 +500,7 @@
       }
 
       const rows = items.map(item => `
-        <tr>
+        <tr data-item-id="${item.id}">
           <td class="cell-id">${esc(item.item_id)}</td>
           <td>${esc(item.item_type || '—')}</td>
           <td>${esc(item.category || '—')}</td>
@@ -455,6 +511,9 @@
           <td class="cell-notes">${esc(item.notes || '—')}</td>
           <td class="cell-location">${formatLocation(item)}</td>
           <td class="cell-date">${formatDate(item.added_at)}</td>
+          <td class="cell-actions">
+            <button class="btn-delete-row" onclick="openDeleteConfirm(${item.id}, '${esc(item.item_id)}')">Delete</button>
+          </td>
         </tr>`).join('');
 
       section.innerHTML = `
@@ -474,6 +533,7 @@
                 <th>Notes</th>
                 <th>Location</th>
                 <th>Added</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -511,6 +571,51 @@
     // Enter key on any input triggers search
     document.querySelectorAll('input').forEach(el => {
       el.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+    });
+
+    // ── Delete item ───────────────────────────────────────────────────────────
+    let pendingDeleteId  = null;
+    let pendingDeleteRow = null;
+
+    function openDeleteConfirm(itemDbId, itemLabel) {
+      pendingDeleteId  = itemDbId;
+      pendingDeleteRow = document.querySelector(`tr[data-item-id="${itemDbId}"]`);
+      document.getElementById('deleteModalMsg').textContent =
+        `Are you sure you want to permanently delete "${itemLabel}" from inventory? This cannot be undone.`;
+      document.getElementById('deleteModal').classList.add('open');
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('deleteModal').classList.remove('open');
+      pendingDeleteId  = null;
+      pendingDeleteRow = null;
+    }
+
+    document.getElementById('deleteCancelBtn').addEventListener('click', closeDeleteModal);
+    document.getElementById('deleteModal').addEventListener('click', e => {
+      if (e.target === document.getElementById('deleteModal')) closeDeleteModal();
+    });
+
+    document.getElementById('deleteConfirmBtn').addEventListener('click', async () => {
+      if (!pendingDeleteId) return;
+      const id  = pendingDeleteId;
+      const row = pendingDeleteRow;
+      closeDeleteModal();
+      try {
+        const resp = await fetch(`/api/items/${id}`, { method: 'DELETE' });
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        if (!resp.ok) { alert('Delete failed. Please try again.'); return; }
+        if (row) row.remove();
+        // Update results count
+        const countEl = document.querySelector('.results-count');
+        if (countEl) {
+          const remaining = document.querySelectorAll('tbody tr').length;
+          countEl.textContent = `${remaining} item${remaining !== 1 ? 's' : ''} found`;
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Delete failed. Please try again.');
+      }
     });
 
     // ── Init ─────────────────────────────────────────────────────────────────

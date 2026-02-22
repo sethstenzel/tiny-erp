@@ -16,19 +16,25 @@ createApp({
       m_shelfAct:  false,
       m_addItem:   false,
       m_rmItems:   false,
-      m_confDel:   false,
+      m_confDel:    false,
+      m_confDelSub: false,
+      m_bulkAdd:     false,
+      m_viewItems:   false,
+      m_itemDetail:  false,
+      mc_activeItem: null,
+      f_bulkText:   '',
+      bulkAddError: '',
       m_zone:      false,
-      m_pasteIsle: false,
+      m_pastePalletRack: false,
       m_pasteZone: false,
       m_delEnt:    false,
       m_zoneAct:   false,
       m_zoneItems: false,
       m_moveDest:  false,
-      m_subAct:    false,
 
       // Inspector panel (floating menu)
       insp_show:        false,
-      insp_type:        '',      // 'isle' | 'zone'
+      insp_type:        '',      // 'pallet-rack' | 'zone'
       insp_name:        '',
       insp_row:         '',
       insp_color:       '#4285f4',
@@ -36,26 +42,27 @@ createApp({
       insp_fillColor:   '#ffffff',
       insp_fillOpacity: 0,
       insp_hideLabel:   false,
+      insp_hideHeader:  false,
       insp_itemFree:    false,
       insp_nameError:   false,
       insp_shelfOrder:  'right',
 
-      // Form: Isle step 1
-      f_isleRow:        '',
-      f_isleName:       '',
+      // Form: Pallet Rack step 1
+      f_palletRackRow:        '',
+      f_palletRackName:       '',
       f_shelfCount:     1,
-      f_isleColor:      '#4285f4',
-      f_isleLabelColor: '#4285f4',
+      f_palletRackColor:      '#4285f4',
+      f_palletRackLabelColor: '#4285f4',
       f_shelfColor:     '#aaaaaa',
-      f_isleFillColor:  '#ffffff',
-      f_isleFillOpacity: 0,
-      f_isleFacing:     'right',
+      f_palletRackFillColor:  '#ffffff',
+      f_palletRackFillOpacity: 0,
+      f_palletRackFacing:     'right',
 
-      // Form: Isle step 2
+      // Form: Pallet Rack step 2
       f_subStart: 1,
       f_subCount: 1,
 
-      // Form: Isle step 3 – shelf labels
+      // Form: Pallet Rack step 3 – shelf labels
       f_shelfLabelsList: [], // [{label:'A'}, ...]
 
       // Form: Zone
@@ -74,17 +81,17 @@ createApp({
       f_itemNotes:     '',
       f_itemTags:      '',
       f_itemUrl:       '',
-      f_pasteIsleName:  '',
+      f_pastePalletRackName:  '',
       f_pasteZoneName:  '',
       f_subName:        '',
       f_shelfActName:   '',
 
       // Validation error flags
-      isleNameError:      false,
+      palletRackNameError:      false,
       addShelfNameError:  false,
       itemIdError:        false,
       zoneLabelError:     false,
-      pasteIsleNameError: false,
+      pastePalletRackNameError: false,
       pasteZoneNameError: false,
       subNameError:       false,
       shelfActNameError:  false,
@@ -94,8 +101,6 @@ createApp({
       shelfNameLocked: true,
 
       // Modal content (dynamic)
-      mc_subActTitle:    '',
-      mc_subActSub:      '',
       mc_subConfigTitle: 'Subsection Setup',
       mc_labelsTitle:    'Label Shelves',
       mc_subSelTitle:    'Select a Subsection',
@@ -112,6 +117,7 @@ createApp({
       mc_selCount:       0,
       mc_confDelMsg:     '',
       mc_showDelBtn:     true,
+      mc_confDelSubMsg:  '',
       mc_delEntTitle:    'Delete?',
       mc_delEntMsg:      '',
       mc_zoneActTitle:   'Zone',
@@ -120,13 +126,13 @@ createApp({
       mc_zoneItemList:   [],
       mc_selZoneItemIds: [],
       mc_zoneSelCount:   0,
-      mc_pasteIsleSub:   '',
+      mc_pastePalletRackSub:   '',
       mc_pasteZoneSub:   '',
 
       // Move items
-      mv_step:    'isle',   // 'isle' | 'sub' | 'shelf'
-      mv_srcLabel: '',
-      mv_isles:   [],
+      mv_step:       'pallet-rack',   // 'pallet-rack' | 'sub' | 'shelf'
+      mv_srcLabel:   '',
+      mv_palletRacks: [],
       mv_subs:    [],
       mv_shelves: [],
 
@@ -135,9 +141,12 @@ createApp({
       searchResults:    [],
       showSearchResults: false,
 
+      // Console log strip
+      consoleLogs: [],
+
       // Status / info
-      statusText:    'Click "Add Isle" then draw inside the warehouse.',
-      isleCountText: 'Isles: 0',
+      statusText:    'Click "Add Pallet Rack" then draw inside the warehouse.',
+      palletRackCountText: 'Pallet Racks: 0',
       zoomText:      '100%',
 
       // Tabs
@@ -147,7 +156,7 @@ createApp({
 
       // UI flags
       editActive:    false,
-      addIsleActive: false,
+      addPalletRackActive: false,
       addZoneActive: false,
       showDelEntBtn: false,
       hasBg:         false,
@@ -166,22 +175,22 @@ createApp({
   },
 
   /* ══════════════════════════════════════════
-     WATCHERS – live-update pending isle/zone when color pickers change
+     WATCHERS – live-update pending pallet rack/zone when color pickers change
   ══════════════════════════════════════════ */
   watch: {
-    f_isleColor(v) {
+    f_palletRackColor(v) {
       if (!this._pi) return;
       this._pi.color = v;
       this._pi.element.style.borderColor = v;
     },
-    f_isleLabelColor(v) {
+    f_palletRackLabelColor(v) {
       if (!this._pi) return;
       this._pi.labelColor = v;
-      const lbl = this._pi.element.querySelector('.isle-label');
+      const lbl = this._pi.element.querySelector('.pallet-rack-label');
       if (lbl) lbl.style.color = v;
     },
-    f_isleFillColor()   { this._applyPendingIsleFill(); },
-    f_isleFillOpacity() { this._applyPendingIsleFill(); },
+    f_palletRackFillColor()   { this._applyPendingIsleFill(); },
+    f_palletRackFillOpacity() { this._applyPendingIsleFill(); },
     f_zoneColor(v) {
       if (!this._pz) return;
       this._pz.color = v;
@@ -212,20 +221,20 @@ createApp({
     insp_labelColor(v) {
       if (!this._inspEntity) return;
       this._inspEntity.labelColor = v;
-      const sel = this.insp_type === 'isle' ? '.isle-label' : '.zone-label';
+      const sel = this.insp_type === 'pallet-rack' ? '.pallet-rack-label' : '.zone-label';
       const lbl = this._inspEntity.element.querySelector(sel);
       if (lbl) lbl.style.color = v;
     },
     insp_fillColor(v) {
-      if (!this._inspEntity || this.insp_type !== 'isle') return;
+      if (!this._inspEntity || this.insp_type !== 'pallet-rack') return;
       this._inspEntity.fillColor = v;
-      this._applyIsleFill(this._inspEntity.element, v, this._inspEntity.fillOpacity);
+      this._applyPalletRackFill(this._inspEntity.element, v, this._inspEntity.fillOpacity);
     },
     insp_fillOpacity(v) {
       if (!this._inspEntity) return;
       this._inspEntity.fillOpacity = v;
-      if (this.insp_type === 'isle') {
-        this._applyIsleFill(this._inspEntity.element, this._inspEntity.fillColor || '#ffffff', v);
+      if (this.insp_type === 'pallet-rack') {
+        this._applyPalletRackFill(this._inspEntity.element, this._inspEntity.fillColor || '#ffffff', v);
       } else {
         this._applyZoneFill(this._inspEntity.element, this._inspEntity.color, v);
       }
@@ -235,6 +244,13 @@ createApp({
       this._inspEntity.hideLabel = v;
       const lbl = this._inspEntity.element.querySelector('.zone-label');
       if (lbl) lbl.style.display = v ? 'none' : '';
+    },
+    insp_hideHeader(v) {
+      if (!this._inspEntity) return;
+      this._inspEntity.hideHeader = v;
+      const hdr = this._inspEntity.element.querySelector('.pallet-rack-header');
+      if (hdr) hdr.style.display = v ? 'none' : '';
+      this._saveLayout();
     },
     insp_itemFree(v) {
       if (!this._inspEntity) return;
@@ -262,9 +278,9 @@ createApp({
 
     _initNonReactive() {
       // All non-reactive state lives as instance vars with _ prefix
-      this._isles = [];
+      this._palletRacks = [];
       this._zones = [];
-      this._isleCounter       = 0;
+      this._palletRackCounter       = 0;
       this._subsectionCounter = 0;
       this._shelfCounter      = 0;
       this._itemCounter       = 0;
@@ -306,11 +322,11 @@ createApp({
       this._rotCX = 0; this._rotCY = 0;
       this._rotStartMouseAngle = 0;
 
-      // Isle drag
-      this._isDragIsle   = false; this._dragIsle = null;
-      this._isleSMX = 0; this._isleSMY = 0;
-      this._isleSX  = 0; this._isleSY  = 0;
-      this._isleDragMoved = false;
+      // Pallet rack drag
+      this._isDragPalletRack   = false; this._dragPalletRack = null;
+      this._palletRackSMX = 0; this._palletRackSMY = 0;
+      this._palletRackSX  = 0; this._palletRackSY  = 0;
+      this._palletRackDragMoved = false;
 
       // Zone drag
       this._isDragZone   = false; this._dragZone = null;
@@ -319,17 +335,17 @@ createApp({
       this._zoneSX  = 0; this._zoneSY  = 0;
 
       // Active selections
-      this._pi   = null;  // pending isle
+      this._pi   = null;  // pending pallet rack
       this._pz   = null;  // pending zone
-      this._ai   = null;  // active isle
+      this._ai   = null;  // active pallet rack
       this._asub = null;  // active subsection
       this._ash  = null;  // active shelf
       this._azfi = null;  // active zone for items
-      this._selIsle   = null;
+      this._selPalletRack   = null;
       this._selZone   = null;
-      this._selIsles  = [];   // multi-selection arrays
+      this._selPalletRacks  = [];   // multi-selection arrays
       this._selZones  = [];
-      this._copiedIsle = null;
+      this._copiedPalletRack = null;
       this._copiedZone = null;
 
       // Multi-drag
@@ -347,11 +363,11 @@ createApp({
 
       // Move items
       this._itemsToMove = [];
-      this._mvSrcIsle = null; this._mvSrcSub = null; this._mvSrcShelf = null;
-      this._mvDestIsle = null; this._mvDestSub = null;
+      this._mvSrcPalletRack = null; this._mvSrcSub = null; this._mvSrcShelf = null;
+      this._mvDestPalletRack = null; this._mvDestSub = null;
 
-      // Edit isle properties
-      this._editingIsle = null;
+      // Edit pallet rack properties
+      this._editingPalletRack = null;
 
       // Inspector panel
       this._inspEntity = null;
@@ -360,6 +376,19 @@ createApp({
 
       this._SNAP = 12;
       this._EDGES = ['nw','n','ne','e','se','s','sw','w'];
+
+      // Cross-warehouse scroll target (set before switchTab, consumed by _resetView)
+      this._pendingScrollEl = null;
+
+      // Session view-state persistence (pan/zoom across page navigations)
+      // Read BEFORE any _resetView() can overwrite sessionStorage.
+      this._sessionView = null;
+      try {
+        const s = sessionStorage.getItem('wh_view');
+        if (s) this._sessionView = JSON.parse(s);
+      } catch (e) {}
+      this._sessionRestoreApplied = false;
+      this._sessionRestoreTimer   = null;
     },
 
     _initDOMRefs() {
@@ -394,7 +423,7 @@ createApp({
           e.stopPropagation(); e.preventDefault();
           const type   = handle.dataset.type;
           const id     = parseInt(handle.dataset.id);
-          const entity = type === 'isle' ? this._isles.find(i => i.id === id) : this._zones.find(z => z.id === id);
+          const entity = type === 'pallet-rack' ? this._palletRacks.find(i => i.id === id) : this._zones.find(z => z.id === id);
           if (!entity) return;
           if (handle.dataset.edge === 'rotate') {
             this._isRotating = true;
@@ -417,7 +446,7 @@ createApp({
           return;
         }
         // Edit mode: rubber-band selection on empty warehouse space
-        if (this._editMode && e.button === 0 && !e.target.closest('.isle') && !e.target.closest('.zone') && !handle) {
+        if (this._editMode && e.button === 0 && !e.target.closest('.pallet-rack') && !e.target.closest('.zone') && !handle) {
           if (!e.shiftKey && !e.ctrlKey && !e.metaKey) { this._clearAllSelection(); this._closeInspector(); }
           this._isRubberBand = true;
           const rp = this._relPos(e);
@@ -428,7 +457,7 @@ createApp({
           return;
         }
         // Draw mode
-        if (!this._drawMode || e.button !== 0 || e.target.closest('.isle') || e.target.closest('.zone')) return;
+        if (!this._drawMode || e.button !== 0 || e.target.closest('.pallet-rack') || e.target.closest('.zone')) return;
         this._isDrawing = true;
         const p = this._snapPt(...Object.values(this._relPos(e)));
         this._startX = p.x; this._startY = p.y;
@@ -512,8 +541,8 @@ createApp({
       this._warehouses.push({
         id: 1, name: 'Warehouse 1',
         width: 800, height: 500, background: null,
-        counters: { isleCounter:0, subsectionCounter:0, shelfCounter:0, itemCounter:0, zoneCounter:0 },
-        isles: [], zones: [],
+        counters: { palletRackCounter:0, subsectionCounter:0, shelfCounter:0, itemCounter:0, zoneCounter:0 },
+        palletRacks: [], zones: [],
       });
       // Render the warehouse square and set its inline dimensions before centering
       this._loadWarehouseDOM(this._warehouses[0]);
@@ -525,16 +554,17 @@ createApp({
 
     _mergeItems(layoutData, items) {
       for (const wh of (layoutData.warehouses || [])) {
-        for (const isle of (wh.isles || [])) {
-          for (const sub of (isle.subsections || [])) {
+        for (const palletRack of (wh.palletRacks || wh.isles || [])) {
+          for (const sub of (palletRack.subsections || [])) {
             for (const shelf of (sub.shelves || [])) {
               shelf.items = items
                 .filter(it => it.shelf_id === shelf.id && it.location_type === 'shelf')
                 .map(it => ({
                   id: it.id, itemId: it.item_id,
                   type: it.item_type, category: it.category,
+                  tags: it.tags || '', url: it.url || '',
                   notes: it.notes, addedAt: it.added_at,
-                  shelfId: it.shelf_id, subsectionId: it.subsection_id, isleId: it.isle_id,
+                  shelfId: it.shelf_id, subsectionId: it.subsection_id, palletRackId: it.pallet_rack_id,
                 }));
             }
           }
@@ -559,9 +589,9 @@ createApp({
         activeWarehouseIdx: this._activeWhIdx,
         warehouses: this._warehouses.map(wh => ({
           ...wh,
-          isles: (wh.isles || []).map(isle => ({
-            ...isle,
-            subsections: (isle.subsections || []).map(sub => ({
+          palletRacks: (wh.palletRacks || wh.isles || []).map(palletRack => ({
+            ...palletRack,
+            subsections: (palletRack.subsections || []).map(sub => ({
               ...sub,
               shelves: (sub.shelves || []).map(({ items, element, ...rest }) => rest),
             })),
@@ -594,6 +624,19 @@ createApp({
       } catch (err) { console.error('Delete item failed:', err); }
     },
 
+    // ── Console log ──────────────────────────────────────────────────────────
+
+    _log(text, type = 'info') {
+      const now  = new Date();
+      const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      this.consoleLogs.push({ text, type, time });
+      if (this.consoleLogs.length > 200) this.consoleLogs.shift();
+      this.$nextTick(() => {
+        const el = this.$refs.consoleEl;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+
     // ── Utilities ────────────────────────────────────────────────────────────
 
     _rndHex() {
@@ -603,7 +646,7 @@ createApp({
       const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16);
       return `rgba(${r},${g},${b},${alpha})`;
     },
-    _applyIsleFill(el, fillColor, fillOpacity) {
+    _applyPalletRackFill(el, fillColor, fillOpacity) {
       el.style.background = fillOpacity > 0 ? this._hexRgba(fillColor, fillOpacity / 100) : 'transparent';
     },
     _applyZoneFill(el, borderColor, fillOpacity) {
@@ -611,18 +654,18 @@ createApp({
     },
     _applyPendingIsleFill() {
       if (!this._pi) return;
-      const c = this.f_isleFillColor, o = this.f_isleFillOpacity;
+      const c = this.f_palletRackFillColor, o = this.f_palletRackFillOpacity;
       this._pi.fillColor   = c;
       this._pi.fillOpacity = o;
-      this._applyIsleFill(this._pi.element, c, o);
+      this._applyPalletRackFill(this._pi.element, c, o);
     },
     _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); },
     _escH(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     },
-    _isleHeaderHtml(row, label, labelColor) {
-      const badge = row ? `<span class="isle-row-badge">${this._escH(row)}</span>` : '';
-      return `${badge}<span class="isle-label" style="color:${this._escH(labelColor)}">${this._escH(label)}</span>`;
+    _palletRackHeaderHtml(row, label, labelColor) {
+      const badge = row ? `<span class="pallet-rack-row-badge">${this._escH(row)}</span>` : '';
+      return `${badge}<span class="pallet-rack-label" style="color:${this._escH(labelColor)}">${this._escH(label)}</span>`;
     },
     _relPos(e) {
       const r  = this._wh.getBoundingClientRect();
@@ -636,9 +679,9 @@ createApp({
     // ── Snapping ─────────────────────────────────────────────────────────────
 
     _snapPt(x, y) {
-      if (!this._isles.length && !this._zones.length) return { x, y };
+      if (!this._palletRacks.length && !this._zones.length) return { x, y };
       const vE = [], hE = [];
-      for (const i of this._isles) { vE.push(i.position.x, i.position.x + i.dimensions.width);  hE.push(i.position.y, i.position.y + i.dimensions.height); }
+      for (const i of this._palletRacks) { vE.push(i.position.x, i.position.x + i.dimensions.width);  hE.push(i.position.y, i.position.y + i.dimensions.height); }
       for (const z of this._zones) { vE.push(z.position.x, z.position.x + z.dimensions.width); hE.push(z.position.y, z.position.y + z.dimensions.height); }
       let sx = x, bdx = this._SNAP + 1;
       for (const ex of vE) { const d = Math.abs(x - ex); if (d < bdx) { bdx = d; sx = ex; } }
@@ -647,11 +690,11 @@ createApp({
       return { x: sx, y: sy };
     },
 
-    _snapIsleMove(isle, nx, ny) {
-      const w = isle.dimensions.width, h = isle.dimensions.height;
+    _snapIsleMove(palletRack, nx, ny) {
+      const w = palletRack.dimensions.width, h = palletRack.dimensions.height;
       const vE = [0, this._wh.clientWidth], hE = [0, this._wh.clientHeight];
-      for (const o of this._isles) {
-        if (o.id === isle.id) continue;
+      for (const o of this._palletRacks) {
+        if (o.id === palletRack.id) continue;
         vE.push(o.position.x, o.position.x + o.dimensions.width);
         hE.push(o.position.y, o.position.y + o.dimensions.height);
       }
@@ -677,7 +720,7 @@ createApp({
         vE.push(z.position.x, z.position.x + z.dimensions.width);
         hE.push(z.position.y, z.position.y + z.dimensions.height);
       }
-      for (const i of this._isles) { vE.push(i.position.x, i.position.x + i.dimensions.width); hE.push(i.position.y, i.position.y + i.dimensions.height); }
+      for (const i of this._palletRacks) { vE.push(i.position.x, i.position.x + i.dimensions.width); hE.push(i.position.y, i.position.y + i.dimensions.height); }
       let bx = nx, bdx = this._SNAP + 1;
       for (const ve of vE) {
         const dl = Math.abs(nx - ve), dr = Math.abs(nx + w - ve);
@@ -694,7 +737,21 @@ createApp({
     // ── Pan / Zoom ────────────────────────────────────────────────────────────
 
     _applyTransform() {
-      this._pzl.style.transform = `translate(${this._panX}px,${this._panY}px) scale(${this._currentZoom})`;
+      // Round pan to integer pixels so content always sits on a whole-pixel boundary.
+      // Fractional translate values cause text to render on a sub-pixel grid → blur.
+      const x = Math.round(this._panX);
+      const y = Math.round(this._panY);
+      this._pzl.style.transform = `translate(${x}px,${y}px) scale(${this._currentZoom})`;
+      // Persist view state to sessionStorage so it survives navigation to/from search page.
+      // Only save after initialization is complete (flag prevents overwriting the
+      // original session data before we've had a chance to restore it).
+      if (this._sessionRestoreApplied) {
+        try {
+          sessionStorage.setItem('wh_view', JSON.stringify({
+            panX: this._panX, panY: this._panY, zoom: this._currentZoom,
+          }));
+        } catch (e) {}
+      }
     },
     _zoomAt(factor, cx, cy) {
       const nz = Math.min(Math.max(this._currentZoom * factor, 0.02), 50);
@@ -719,7 +776,62 @@ createApp({
       this._applyTransform();
       this.zoomText = '100%';
     },
-    _resetView() { this.resetView(); },
+    _panToElement(el) {
+      const elRect = el.getBoundingClientRect();
+      const vpRect = this._vp.getBoundingClientRect();
+      this._panX = Math.round(this._panX + (vpRect.left + vpRect.width  / 2) - (elRect.left + elRect.width  / 2));
+      this._panY = Math.round(this._panY + (vpRect.top  + vpRect.height / 2) - (elRect.top  + elRect.height / 2));
+      this._applyTransform();
+    },
+
+    _resetView() {
+      this.resetView();
+      // After the LAST _resetView() call during initialization, restore the saved
+      // session view if one exists. clearTimeout + setTimeout(0) debounces so that
+      // even if _resetView() fires multiple times (from $nextTick + rAF), only
+      // the final invocation triggers the restore.
+      if (!this._sessionRestoreApplied) {
+        clearTimeout(this._sessionRestoreTimer);
+        this._sessionRestoreTimer = setTimeout(() => {
+          if (this._sessionRestoreApplied) return;
+          this._sessionRestoreApplied = true;
+          if (this._sessionView) {
+            const { panX, panY, zoom } = this._sessionView;
+            this._panX = panX;
+            this._panY = panY;
+            this._currentZoom = zoom;
+            this._applyTransform();
+            this.zoomText = `${Math.round(zoom * 100)}%`;
+          }
+        }, 0);
+      }
+      // After a tab-switch reset, pan to any pending cross-warehouse search target.
+      // Uses rAF so the pan is calculated against the already-reset transform.
+      if (this._pendingScrollEl) {
+        const target = this._pendingScrollEl;
+        this._pendingScrollEl = null;
+        requestAnimationFrame(() => {
+          let el = null;
+          if (target.zoneId !== undefined) {
+            const zone = this._zones.find(z => z.id === target.zoneId);
+            if (zone) { zone.element.classList.add('zone-highlight'); el = zone.element; }
+          } else {
+            const pr = this._palletRacks.find(p => p.id === target.palletRackId);
+            if (pr) {
+              pr.element.classList.add('pallet-rack-highlight');
+              const sub = pr.subsections.find(s => s.id === target.subId);
+              if (sub) {
+                sub.element.classList.add('sub-highlight');
+                const shelf = sub.shelves.find(s => s.id === target.shelfId);
+                if (shelf && shelf.element) shelf.element.classList.add('shelf-highlight');
+                el = sub.element;
+              }
+            }
+          }
+          if (el) this._panToElement(el);
+        });
+      }
+    },
 
     // ── Warehouse resize handles ──────────────────────────────────────────────
 
@@ -766,7 +878,7 @@ createApp({
     },
     _createAllHandles() {
       this._removeAllHandles();
-      this._isles.forEach(e => this._createHandles(e, 'isle'));
+      this._palletRacks.forEach(e => this._createHandles(e, 'pallet-rack'));
       this._zones.forEach(e => this._createHandles(e, 'zone'));
     },
     _removeAllHandles() {
@@ -783,36 +895,36 @@ createApp({
     _cancelEditMode() {
       this._editMode = false; this.editActive = false;
       this._isEntResize = false; this._entResizeTarget = null;
-      this._isleDragMoved = false;
+      this._palletRackDragMoved = false;
       this._isDragMulti = false; this._multiDragStartPositions = [];
       this._isRubberBand = false;
       this._clearAllSelection();
       this._closeInspector();
       this.showDelEntBtn = false;
-      this.statusText = 'Click "Add Isle" then draw inside the warehouse.';
+      this.statusText = 'Click "Add Pallet Rack" then draw inside the warehouse.';
       this._removeAllHandles();
     },
 
-    _selectIsle(isle) {
+    _selectPalletRack(palletRack) {
       this._clearAllSelection();
-      if (isle) this._addIsleToSelection(isle);
+      if (palletRack) this._addPalletRackToSelection(palletRack);
     },
     _selectZone(zone) {
       this._clearAllSelection();
       if (zone) this._addZoneToSelection(zone);
     },
     _clearAllSelection() {
-      this._selIsles.forEach(i => i.element?.classList.remove('isle-selected'));
+      this._selPalletRacks.forEach(i => i.element?.classList.remove('pallet-rack-selected'));
       this._selZones.forEach(z => z.element?.classList.remove('zone-selected'));
-      this._selIsles = []; this._selZones = [];
-      this._selIsle = null; this._selZone = null;
+      this._selPalletRacks = []; this._selZones = [];
+      this._selPalletRack = null; this._selZone = null;
       this._updateDelBtn();
     },
-    _addIsleToSelection(isle) {
-      if (!isle || this._selIsles.includes(isle)) return;
-      this._selIsles.push(isle);
-      isle.element?.classList.add('isle-selected');
-      this._selIsle = isle;
+    _addPalletRackToSelection(palletRack) {
+      if (!palletRack || this._selPalletRacks.includes(palletRack)) return;
+      this._selPalletRacks.push(palletRack);
+      palletRack.element?.classList.add('pallet-rack-selected');
+      this._selPalletRack = palletRack;
       this._updateDelBtn();
     },
     _addZoneToSelection(zone) {
@@ -822,16 +934,16 @@ createApp({
       this._selZone = zone;
       this._updateDelBtn();
     },
-    _toggleSelectIsle(isle) {
-      const idx = this._selIsles.indexOf(isle);
+    _toggleSelectPalletRack(palletRack) {
+      const idx = this._selPalletRacks.indexOf(palletRack);
       if (idx !== -1) {
-        this._selIsles.splice(idx, 1);
-        isle.element?.classList.remove('isle-selected');
-        this._selIsle = this._selIsles[this._selIsles.length - 1] || null;
+        this._selPalletRacks.splice(idx, 1);
+        palletRack.element?.classList.remove('pallet-rack-selected');
+        this._selPalletRack = this._selPalletRacks[this._selPalletRacks.length - 1] || null;
       } else {
-        this._selIsles.push(isle);
-        isle.element?.classList.add('isle-selected');
-        this._selIsle = isle;
+        this._selPalletRacks.push(palletRack);
+        palletRack.element?.classList.add('pallet-rack-selected');
+        this._selPalletRack = palletRack;
       }
       this._updateDelBtn();
     },
@@ -852,18 +964,18 @@ createApp({
       return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
     },
     _updateDelBtn() {
-      this.showDelEntBtn = this._editMode && !!(this._selIsles.length || this._selZones.length);
+      this.showDelEntBtn = this._editMode && !!(this._selPalletRacks.length || this._selZones.length);
     },
 
     // ── Draw mode ────────────────────────────────────────────────────────────
 
     activateDrawMode() {
-      if (this._drawMode === 'isle') { this._cancelDrawMode(); return; }
+      if (this._drawMode === 'pallet-rack') { this._cancelDrawMode(); return; }
       if (this._drawMode) this._cancelDrawMode();
       if (this._editMode) this._cancelEditMode();
-      this._drawMode = 'isle'; this.addIsleActive = true;
+      this._drawMode = 'pallet-rack'; this.addPalletRackActive = true;
       this._wh.classList.add('drawing-mode');
-      this.statusText = 'Click & drag to draw an isle.';
+      this.statusText = 'Click & drag to draw a pallet rack.';
     },
     activateZoneMode() {
       if (this._drawMode === 'zone') { this._cancelDrawMode(); return; }
@@ -875,10 +987,10 @@ createApp({
     },
     _cancelDrawMode() {
       this._drawMode = null; this._isDrawing = false;
-      this.addIsleActive = false; this.addZoneActive = false;
+      this.addPalletRackActive = false; this.addZoneActive = false;
       this._wh.classList.remove('drawing-mode');
       this._prev.style.display = 'none';
-      this.statusText = 'Click "Add Isle" then draw inside the warehouse.';
+      this.statusText = 'Click "Add Pallet Rack" then draw inside the warehouse.';
     },
 
     // ── Mouse events ─────────────────────────────────────────────────────────
@@ -911,7 +1023,7 @@ createApp({
         if (edge.includes('w')) { nw = Math.max(MIN, nw - dx); nx = this._entResizeSX + this._entResizeSW - nw; }
         if (edge.includes('s')) nh = Math.max(MIN, nh + dy);
         if (edge.includes('n')) { nh = Math.max(MIN, nh - dy); ny = this._entResizeSY + this._entResizeSH - nh; }
-        if (this._entResizeType === 'isle') {
+        if (this._entResizeType === 'pallet-rack') {
           nx = Math.max(0, nx); ny = Math.max(0, ny);
           nw = Math.min(nw, this._wh.clientWidth  - nx);
           nh = Math.min(nh, this._wh.clientHeight - ny);
@@ -933,7 +1045,7 @@ createApp({
       if (this._isDragMulti) {
         const dx = (e.clientX - this._dragMultiSMX) / this._currentZoom;
         const dy = (e.clientY - this._dragMultiSMY) / this._currentZoom;
-        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._isleDragMoved = true, this._zoneDragMoved = true;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._palletRackDragMoved = true, this._zoneDragMoved = true;
         for (const { entity, type, sx, sy } of this._multiDragStartPositions) {
           const nx = sx + dx, ny = sy + dy;
           entity.position.x = nx; entity.position.y = ny;
@@ -941,15 +1053,15 @@ createApp({
           if (this._editMode) this._updateHandles(entity, type);
         }
       }
-      if (this._isDragIsle && this._dragIsle) {
-        const dx = (e.clientX - this._isleSMX) / this._currentZoom;
-        const dy = (e.clientY - this._isleSMY) / this._currentZoom;
-        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._isleDragMoved = true;
-        const rx = this._isleSX + dx, ry = this._isleSY + dy;
-        const sn = (e.ctrlKey || e.metaKey) ? { x: rx, y: ry } : this._snapIsleMove(this._dragIsle, rx, ry);
-        this._dragIsle.position.x = sn.x; this._dragIsle.position.y = sn.y;
-        this._dragIsle.element.style.left = sn.x + 'px'; this._dragIsle.element.style.top = sn.y + 'px';
-        if (this._editMode) this._updateHandles(this._dragIsle, 'isle');
+      if (this._isDragPalletRack && this._dragPalletRack) {
+        const dx = (e.clientX - this._palletRackSMX) / this._currentZoom;
+        const dy = (e.clientY - this._palletRackSMY) / this._currentZoom;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this._palletRackDragMoved = true;
+        const rx = this._palletRackSX + dx, ry = this._palletRackSY + dy;
+        const sn = (e.ctrlKey || e.metaKey) ? { x: rx, y: ry } : this._snapIsleMove(this._dragPalletRack, rx, ry);
+        this._dragPalletRack.position.x = sn.x; this._dragPalletRack.position.y = sn.y;
+        this._dragPalletRack.element.style.left = sn.x + 'px'; this._dragPalletRack.element.style.top = sn.y + 'px';
+        if (this._editMode) this._updateHandles(this._dragPalletRack, 'pallet-rack');
       }
       if (this._isDragZone && this._dragZone) {
         const dx = (e.clientX - this._zoneSMX) / this._currentZoom;
@@ -986,7 +1098,7 @@ createApp({
       if (this._isEntResize)  { this._isEntResize = false; this._entResizeTarget = null; this._saveLayout(); }
       if (this._isRotating)   { this._isRotating  = false; this._rotEntity = null; this._saveLayout(); }
       if (this._isDragMulti)  { this._isDragMulti = false; this._multiDragStartPositions = []; this._saveLayout(); }
-      if (this._isDragIsle)   { this._isDragIsle  = false; this._dragIsle  = null; this._saveLayout(); }
+      if (this._isDragPalletRack)   { this._isDragPalletRack  = false; this._dragPalletRack  = null; this._saveLayout(); }
       if (this._isDragZone)   { this._isDragZone  = false; this._dragZone  = null; this._saveLayout(); }
       if (this._isRubberBand) {
         this._isRubberBand = false;
@@ -997,15 +1109,15 @@ createApp({
         this._prev.style.display = 'none';
         this._prev.classList.remove('rubber-band');
         if (rbW > 5 || rbH > 5) {
-          for (const isle of this._isles) {
-            if (this._rectsOverlap(isle.position.x, isle.position.y, isle.dimensions.width, isle.dimensions.height, rbX, rbY, rbW, rbH))
-              this._addIsleToSelection(isle);
+          for (const palletRack of this._palletRacks) {
+            if (this._rectsOverlap(palletRack.position.x, palletRack.position.y, palletRack.dimensions.width, palletRack.dimensions.height, rbX, rbY, rbW, rbH))
+              this._addPalletRackToSelection(palletRack);
           }
           for (const zone of this._zones) {
             if (this._rectsOverlap(zone.position.x, zone.position.y, zone.dimensions.width, zone.dimensions.height, rbX, rbY, rbW, rbH))
               this._addZoneToSelection(zone);
           }
-          const n = this._selIsles.length + this._selZones.length;
+          const n = this._selPalletRacks.length + this._selZones.length;
           if (n > 1) this.statusText = `${n} entities selected · Drag to move · Del to delete.`;
         }
       }
@@ -1027,15 +1139,15 @@ createApp({
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (this._editMode && this._selIsle) { this._copyIsle(); e.preventDefault(); }
+        if (this._editMode && this._selPalletRack) { this._copyPalletRack(); e.preventDefault(); }
         else if (this._editMode && this._selZone) { this._copyZone(); e.preventDefault(); }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        if (this._editMode && this._copiedIsle) { this._openPasteModal(); e.preventDefault(); }
+        if (this._editMode && this._copiedPalletRack) { this._openPastePalletRackModal(); e.preventDefault(); }
         else if (this._editMode && this._copiedZone) { this._openPasteZoneModal(); e.preventDefault(); }
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && this._editMode) {
-        if (this._selIsle || this._selZone) { this.deleteSelectedEntity(); e.preventDefault(); }
+        if (this._selPalletRack || this._selZone) { this.deleteSelectedEntity(); e.preventDefault(); }
       }
     },
 
@@ -1104,12 +1216,12 @@ createApp({
           this._clearAllSelection();
           this._addZoneToSelection(zone);
         }
-        const totalSel = this._selIsles.length + this._selZones.length;
+        const totalSel = this._selPalletRacks.length + this._selZones.length;
         if (totalSel > 1) {
           this._isDragMulti = true;
           this._dragMultiSMX = e.clientX; this._dragMultiSMY = e.clientY;
           this._multiDragStartPositions = [
-            ...this._selIsles.map(i => ({ entity: i, type: 'isle', sx: i.position.x, sy: i.position.y })),
+            ...this._selPalletRacks.map(i => ({ entity: i, type: 'pallet-rack', sx: i.position.x, sy: i.position.y })),
             ...this._selZones.map(z => ({ entity: z, type: 'zone', sx: z.position.x, sy: z.position.y })),
           ];
           this._zoneDragMoved = false;
@@ -1135,42 +1247,42 @@ createApp({
 
     _beginIsleCreation(x, y, w, h) {
       const color = this._rndHex();
-      const id = ++this._isleCounter;
+      const id = ++this._palletRackCounter;
       const el = document.createElement('div');
-      el.className = 'isle';
+      el.className = 'pallet-rack';
       Object.assign(el.style, { left:`${x}px`, top:`${y}px`, width:`${w}px`, height:`${h}px`, borderColor:color });
-      el.dataset.isleId = id;
-      el.innerHTML = `<div class="isle-header"><span class="isle-label" style="color:${color}">…</span></div>`;
+      el.dataset.palletRackId = id;
+      el.innerHTML = `<div class="pallet-rack-header"><span class="pallet-rack-label" style="color:${color}">…</span></div>`;
       this._wh.appendChild(el);
       this._pi = { id, label:'', row:'', color, shelfColor:'#aaaaaa',
                    fillColor:'#ffffff', fillOpacity:0, labelColor:color, rotation:0,
                    position:{x,y}, dimensions:{width:w,height:h}, element:el,
                    shelfCount:1, shelfLabels:[], subsectionStart:1, subsectionCount:1,
                    facing:'right', subsections:[], createdAt: new Date().toISOString() };
-      this.f_isleRow = ''; this.f_isleName = '';
-      this.f_shelfCount = 1; this.f_isleColor = color;
-      this.f_isleLabelColor = color; this.f_shelfColor = '#aaaaaa';
-      this.f_isleFillColor  = '#ffffff'; this.f_isleFillOpacity = 0;
-      this.f_isleFacing = 'right';
-      this.isleNameError = false;
+      this.f_palletRackRow = ''; this.f_palletRackName = '';
+      this.f_shelfCount = 1; this.f_palletRackColor = color;
+      this.f_palletRackLabelColor = color; this.f_shelfColor = '#aaaaaa';
+      this.f_palletRackFillColor  = '#ffffff'; this.f_palletRackFillOpacity = 0;
+      this.f_palletRackFacing = 'right';
+      this.palletRackNameError = false;
       this.m_count = true;
-      this.$nextTick(() => this.$refs.isleNameInput?.focus());
+      this.$nextTick(() => this.$refs.palletRackNameInput?.focus());
     },
 
     confirmStep1() {
-      const name = this.f_isleName.trim();
-      if (!name) { this.isleNameError = true; return; }
-      this.isleNameError = false;
+      const name = this.f_palletRackName.trim();
+      if (!name) { this.palletRackNameError = true; return; }
+      this.palletRackNameError = false;
       this._pi.label      = name;
-      this._pi.row        = this.f_isleRow.trim();
+      this._pi.row        = this.f_palletRackRow.trim();
       this._pi.shelfCount = Math.min(Math.max(this.f_shelfCount || 1, 1), 26);
-      this._pi.facing     = this.f_isleFacing;
+      this._pi.facing     = this.f_palletRackFacing;
       this._pi.shelfColor  = this.f_shelfColor;
-      this._pi.fillColor   = this.f_isleFillColor;
-      this._pi.fillOpacity = this.f_isleFillOpacity;
-      this._pi.labelColor  = this.f_isleLabelColor;
-      const hdr = this._pi.element.querySelector('.isle-header');
-      if (hdr) hdr.innerHTML = this._isleHeaderHtml(this._pi.row, name, this._pi.labelColor);
+      this._pi.fillColor   = this.f_palletRackFillColor;
+      this._pi.fillOpacity = this.f_palletRackFillOpacity;
+      this._pi.labelColor  = this.f_palletRackLabelColor;
+      const hdr = this._pi.element.querySelector('.pallet-rack-header');
+      if (hdr) hdr.innerHTML = this._palletRackHeaderHtml(this._pi.row, name, this._pi.labelColor);
       this.mc_subConfigTitle = `Subsection Setup — ${name}`;
       this.f_subStart = 1; this.f_subCount = 1;
       this.m_count = false; this.m_subs = true;
@@ -1191,8 +1303,8 @@ createApp({
     },
     goBackToStep2() { this.m_labels = false; this.m_subs = true; },
 
-    cancelIsleCreation() {
-      if (this._pi) { this._pi.element.remove(); this._pi = null; this._isleCounter--; }
+    cancelPalletRackCreation() {
+      if (this._pi) { this._pi.element.remove(); this._pi = null; this._palletRackCounter--; }
       this.m_count = false; this.m_subs = false; this.m_labels = false;
     },
 
@@ -1201,10 +1313,10 @@ createApp({
     confirmStep3() {
       const shelfLabels = this.f_shelfLabelsList.map((s, i) => s.label.trim() || String.fromCharCode(65 + i));
       this._pi.shelfLabels = shelfLabels;
-      const { subsectionStart, subsectionCount, element: isleEl, id: isleId, facing, shelfColor } = this._pi;
+      const { subsectionStart, subsectionCount, element: palletRackEl, id: palletRackId, facing, shelfColor } = this._pi;
 
       const body = document.createElement('div');
-      body.className = 'isle-body';
+      body.className = 'pallet-rack-body';
 
       for (let s = 0; s < subsectionCount; s++) {
         const num   = subsectionStart + s;
@@ -1217,12 +1329,10 @@ createApp({
 
         const shelvesDiv = document.createElement('div');
         shelvesDiv.className = 'sub-shelves';
-        const wallEl = document.createElement('div');
-        wallEl.className = 'wall-indicator';
 
         const subId = ++this._subsectionCounter;
         const shelves = shelfLabels.map((lbl, j) => ({
-          id: ++this._shelfCounter, isleId, subsectionId: subId,
+          id: ++this._shelfCounter, palletRackId: palletRackId, subsectionId: subId,
           shelfNumber: j+1, label: lbl, items: [], element: null,
         }));
 
@@ -1234,83 +1344,83 @@ createApp({
 
         if (facing === 'left') {
           [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh)));
-          shelvesDiv.appendChild(wallEl);
         } else {
-          shelvesDiv.appendChild(wallEl);
           shelves.forEach(sh => shelvesDiv.appendChild(makeSlot(sh)));
         }
         subEl.appendChild(shelvesDiv);
 
-        const subObj = { id: subId, isleId, number: num, name: '', element: subEl, shelves };
+        const subObj = { id: subId, palletRackId: palletRackId, number: num, name: '', element: subEl, shelves };
         this._pi.subsections.push(subObj);
 
         subEl.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (this._drawMode || this._editMode || this._isleDragMoved) return;
-          this._ai   = this._isles.find(i => i.id === isleId);
-          this._openSubsectionActions(subObj);
+          if (this._drawMode || this._editMode || this._palletRackDragMoved) return;
+          this._ai   = this._palletRacks.find(i => i.id === palletRackId);
+          this._asub = subObj;
+          this._openShelfSelect(subObj);
         });
 
         body.appendChild(subEl);
       }
 
-      isleEl.appendChild(body);
-      this._applyIsleFill(isleEl, this._pi.fillColor, this._pi.fillOpacity);
-      this._isles.push(this._pi);
-      this._attachIsleHandlers(this._pi);
-      this.isleCountText = `Isles: ${this._isles.length}`;
+      palletRackEl.appendChild(body);
+      this._applyPalletRackFill(palletRackEl, this._pi.fillColor, this._pi.fillOpacity);
+      this._palletRacks.push(this._pi);
+      this._attachPalletRackHandlers(this._pi);
+      this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
       this.statusText = `${this._pi.label} added.`;
       this._pi = null; this.m_labels = false;
       this._saveLayout();
     },
 
-    _attachIsleHandlers(isle) {
-      isle.element.addEventListener('mousedown', (e) => {
+    _attachPalletRackHandlers(palletRack) {
+      palletRack.element.addEventListener('mousedown', (e) => {
         if (!this._editMode || e.button !== 0) return;
         e.stopPropagation(); e.preventDefault();
         const multiKey = e.shiftKey || e.ctrlKey || e.metaKey;
         if (multiKey) {
-          this._toggleSelectIsle(isle);
-        } else if (!this._selIsles.includes(isle)) {
+          this._toggleSelectPalletRack(palletRack);
+        } else if (!this._selPalletRacks.includes(palletRack)) {
           this._clearAllSelection();
-          this._addIsleToSelection(isle);
+          this._addPalletRackToSelection(palletRack);
         }
-        const totalSel = this._selIsles.length + this._selZones.length;
+        const totalSel = this._selPalletRacks.length + this._selZones.length;
         if (totalSel > 1) {
           this._isDragMulti = true;
           this._dragMultiSMX = e.clientX; this._dragMultiSMY = e.clientY;
           this._multiDragStartPositions = [
-            ...this._selIsles.map(i => ({ entity: i, type: 'isle', sx: i.position.x, sy: i.position.y })),
+            ...this._selPalletRacks.map(i => ({ entity: i, type: 'pallet-rack', sx: i.position.x, sy: i.position.y })),
             ...this._selZones.map(z => ({ entity: z, type: 'zone', sx: z.position.x, sy: z.position.y })),
           ];
-          this._isleDragMoved = false;
+          this._palletRackDragMoved = false;
         } else {
-          this._isDragIsle = true; this._dragIsle = isle;
-          this._isleDragMoved = false;
-          this._isleSMX = e.clientX; this._isleSMY = e.clientY;
-          this._isleSX  = isle.position.x; this._isleSY  = isle.position.y;
+          this._isDragPalletRack = true; this._dragPalletRack = palletRack;
+          this._palletRackDragMoved = false;
+          this._palletRackSMX = e.clientX; this._palletRackSMY = e.clientY;
+          this._palletRackSX  = palletRack.position.x; this._palletRackSY  = palletRack.position.y;
         }
       });
-      isle.element.addEventListener('click', () => {
+      palletRack.element.addEventListener('click', () => {
         if (this._drawMode) return;
         if (this._editMode) {
-          if (!this._isleDragMoved) this._openInspector(isle, 'isle');
+          if (!this._palletRackDragMoved) this._openInspector(palletRack, 'pallet-rack');
           return;
         }
-        this._ai = isle;
-        if (isle.subsections.length === 1) {
-          this._openSubsectionActions(isle.subsections[0]);
+        this._ai = palletRack;
+        if (palletRack.subsections.length === 1) {
+          this._asub = palletRack.subsections[0];
+          this._openShelfSelect(this._asub);
         } else {
-          this._openSubsectionSelect(isle);
+          this._openSubsectionSelect(palletRack);
         }
       });
     },
 
     // ── Subsection / Shelf select ─────────────────────────────────────────────
 
-    _openSubsectionSelect(isle) {
-      this.mc_subSelTitle = `${isle.label} — Select a Subsection`;
-      this.mc_subSelList  = isle.subsections.map(sub => ({
+    _openSubsectionSelect(palletRack) {
+      this.mc_subSelTitle = `${palletRack.label} — Select a Subsection`;
+      this.mc_subSelList  = palletRack.subsections.map(sub => ({
         ...sub,
         totalItems: sub.shelves.reduce((n, sh) => n + sh.items.length, 0),
       }));
@@ -1318,28 +1428,15 @@ createApp({
     },
 
     selectSubsectionFromList(sub) {
+      this._asub = sub;
       this.m_subSel = false;
-      this._openSubsectionActions(sub);
+      this._openShelfSelect(sub);
     },
 
     backToSubsectionSelect() {
       this.m_shelfSel = false;
-      if (this._asub) this._openSubsectionActions(this._asub);
-      else this.closeAllModals();
-    },
-
-    _openSubsectionActions(sub) {
-      this._asub = sub;
-      const isle = this._ai;
-      const totalItems = sub.shelves.reduce((n, s) => n + s.items.length, 0);
-      this.mc_subActTitle = isle
-        ? `${isle.label} › ${sub.name || 'Sub ' + sub.number}`
-        : `Sub ${sub.number}`;
-      this.mc_subActSub = `${sub.shelves.length} shelf${sub.shelves.length !== 1 ? 'ves' : ''} · ${totalItems} item${totalItems !== 1 ? 's' : ''}`;
-      this.f_subName     = sub.name || '';
-      this.subNameLocked = true;
-      this.subNameError  = false;
-      this.m_subAct = true;
+      if (this._ai && this._ai.subsections.length === 1) this.closeAllModals();
+      else if (this._ai) this._openSubsectionSelect(this._ai);
     },
 
     unlockSubName() {
@@ -1366,29 +1463,22 @@ createApp({
       } else if (nameEl) {
         nameEl.remove();
       }
-      this.mc_subActTitle = this._ai
-        ? `${this._ai.label} › ${name || 'Sub ' + sub.number}`
-        : `Sub ${sub.number}`;
+      const subLabel = name || `Sub ${sub.number}`;
+      this.mc_shelfSelTitle = this._ai
+        ? `${this._ai.label} › ${subLabel} — Select a Shelf`
+        : `${subLabel} — Select a Shelf`;
       this.subNameLocked = true;
       this._saveLayout();
       this.statusText = 'Subsection name saved.';
-    },
-
-    proceedToShelves() {
-      this.m_subAct = false;
-      this._openShelfSelect(this._asub);
-    },
-
-    backFromSubAct() {
-      this.m_subAct = false;
-      if (this._ai && this._ai.subsections.length > 1) this._openSubsectionSelect(this._ai);
-      else this.closeAllModals();
     },
 
     _openShelfSelect(sub) {
       const subLabel = sub.name || `Sub ${sub.number}`;
       this.mc_shelfSelTitle = `${this._ai.label} › ${subLabel} — Select a Shelf`;
       this.mc_shelfSelList  = sub.shelves;
+      this.f_subName        = sub.name || '';
+      this.subNameLocked    = true;
+      this.subNameError     = false;
       this.m_shelfSel = true;
     },
 
@@ -1442,7 +1532,7 @@ createApp({
       if (!label) { this.addShelfNameError = true; return; }
       this.addShelfNameError = false;
       const shelf = {
-        id: ++this._shelfCounter, isleId: this._ai.id, subsectionId: this._asub.id,
+        id: ++this._shelfCounter, palletRackId: this._ai.id, subsectionId: this._asub.id,
         shelfNumber: this._asub.shelves.length + 1, label, items: [], element: null,
       };
       const slot = document.createElement('div');
@@ -1477,6 +1567,41 @@ createApp({
       if (this._asub.shelves.length === 0) this.closeAllModals();
       else this._openShelfSelect(this._asub);
       this._saveLayout();
+    },
+
+    // ── Delete subsection ─────────────────────────────────────────────────────
+
+    openDeleteSub() {
+      const totalItems = this._asub.shelves.reduce((n, sh) => n + sh.items.length, 0);
+      const subLabel = this._asub.name || `Sub ${this._asub.number}`;
+      if (totalItems > 0) {
+        this.mc_confDelSubMsg = `"${subLabel}" contains ${totalItems} item(s) across its shelves. All items will be permanently deleted. This cannot be undone.`;
+      } else {
+        this.mc_confDelSubMsg = `Permanently delete "${subLabel}"? This cannot be undone.`;
+      }
+      this.m_confDelSub = true;
+    },
+
+    async confirmDeleteSub() {
+      this.m_confDelSub = false;
+      const sub = this._asub;
+      for (const shelf of sub.shelves)
+        for (const item of shelf.items)
+          await this._removeItemFromDB(item.id);
+      sub.element.remove();
+      this._ai.subsections = this._ai.subsections.filter(s => s.id !== sub.id);
+      this._asub = null; this._ash = null;
+      const remaining = this._ai.subsections.length;
+      if (remaining === 0) {
+        this.closeAllModals();
+      } else if (remaining === 1) {
+        this._asub = this._ai.subsections[0];
+        this._openShelfSelect(this._asub);
+      } else {
+        this._openSubsectionSelect(this._ai);
+      }
+      this._saveLayout();
+      this.statusText = `Subsection "${sub.name || `Sub ${sub.number}`}" deleted.`;
     },
 
     // ── Add item ─────────────────────────────────────────────────────────────
@@ -1536,19 +1661,105 @@ createApp({
           url: this.f_itemUrl.trim(), tags: this.f_itemTags.trim(),
           added_at: now, location_type: 'shelf',
           warehouse_id: wh?.id, warehouse_name: wh?.name || '',
-          isle_id: this._ai.id, isle_label: this._ai.label, isle_row: this._ai.row || '',
-          subsection_id: this._asub.id, subsection_number: this._asub.number,
+          pallet_rack_id: this._ai.id, pallet_rack_label: this._ai.label, pallet_rack_row: this._ai.row || '',
+          subsection_id: this._asub.id, subsection_number: this._asub.number, subsection_name: this._asub.name || '',
           shelf_id: this._ash.id, shelf_label: this._ash.label,
         };
         const dbId = await this._addItemToDB(payload);
         this._ash.items.push({
           id: dbId, itemId, type: payload.item_type, category: payload.category,
+          tags: payload.tags || '', url: payload.url || '',
           notes: payload.notes, addedAt: now,
-          shelfId: this._ash.id, subsectionId: this._asub.id, isleId: this._ai.id,
+          shelfId: this._ash.id, subsectionId: this._asub.id, palletRackId: this._ai.id,
         });
         this.m_addItem = false;
         this.selectShelfFromList(this._ash);
       }
+    },
+
+    // ── Bulk add items ────────────────────────────────────────────────────────
+
+    openBulkAdd() {
+      this.m_shelfAct = false;
+      this.mc_addItemSub = `${this._ai.label} › ${this._asub.name || `Sub ${this._asub.number}`} › ${this._ash.label}`;
+      this.f_bulkText = '';
+      this.bulkAddError = '';
+      this.m_bulkAdd = true;
+      this.$nextTick(() => this.$refs.bulkAddInput?.focus());
+    },
+
+    openViewItems() {
+      this.m_shelfAct = false;
+      this.mc_itemList = this._ash.items;
+      this.m_viewItems = true;
+    },
+
+    openItemDetail(item) {
+      this._activeItemShelf = this._ash;
+      this.mc_activeItem = item;
+      this.m_itemDetail  = true;
+    },
+
+    openItemDetailFromSearch(item, shelf) {
+      this._activeItemShelf = shelf;
+      this.mc_activeItem = item;
+      this.m_itemDetail  = true;
+    },
+
+    async deleteViewItem() {
+      const item  = this.mc_activeItem;
+      const shelf = this._activeItemShelf;
+      if (!item || !shelf) return;
+      await this._removeItemFromDB(item.id);
+      shelf.items = shelf.items.filter(i => i.id !== item.id);
+      this.mc_itemList   = shelf.items;
+      this.mc_activeItem = null;
+      this.m_itemDetail  = false;
+      if (this._ash === shelf)
+        this.mc_shelfActSub = `${shelf.items.length} item${shelf.items.length !== 1 ? 's' : ''} on this shelf`;
+    },
+
+    async confirmBulkAdd() {
+      const lines = this.f_bulkText.split('\n').map(l => l.trim()).filter(Boolean);
+      if (!lines.length) { this.bulkAddError = 'No items entered.'; return; }
+      const parsed = [];
+      const errors = [];
+      for (let i = 0; i < lines.length; i++) {
+        const parts = lines[i].split(';');
+        const itemId = (parts[0] || '').trim();
+        if (!itemId) { errors.push(`Line ${i + 1}: Item ID is required.`); continue; }
+        parsed.push({
+          item_id:   itemId,
+          item_type: (parts[1] || '').trim(),
+          category:  (parts[2] || '').trim(),
+          tags:      (parts[3] || '').trim(),
+          url:       (parts[4] || '').trim(),
+          notes:     (parts[5] || '').trim(),
+        });
+      }
+      if (errors.length) { this.bulkAddError = errors.join('\n'); return; }
+      const now = new Date().toISOString();
+      const wh  = this._warehouses[this._activeWhIdx];
+      for (const item of parsed) {
+        const payload = {
+          ...item,
+          added_at: now, location_type: 'shelf',
+          warehouse_id: wh?.id, warehouse_name: wh?.name || '',
+          pallet_rack_id: this._ai.id, pallet_rack_label: this._ai.label, pallet_rack_row: this._ai.row || '',
+          subsection_id: this._asub.id, subsection_number: this._asub.number, subsection_name: this._asub.name || '',
+          shelf_id: this._ash.id, shelf_label: this._ash.label,
+        };
+        const dbId = await this._addItemToDB(payload);
+        this._ash.items.push({
+          id: dbId, itemId: item.item_id, type: item.item_type, category: item.category,
+          tags: item.tags || '', url: item.url || '',
+          notes: item.notes, addedAt: now,
+          shelfId: this._ash.id, subsectionId: this._asub.id, palletRackId: this._ai.id,
+        });
+      }
+      this.m_bulkAdd = false;
+      this.statusText = `Added ${parsed.length} item(s) to ${this._ash.label}.`;
+      this.selectShelfFromList(this._ash);
     },
 
     // ── Remove items ──────────────────────────────────────────────────────────
@@ -1588,20 +1799,20 @@ createApp({
     openMoveItems() {
       if (!this._selItemIds.size) return;
       this._itemsToMove = this._ash.items.filter(i => this._selItemIds.has(i.id));
-      this._mvSrcIsle  = this._ai;
+      this._mvSrcPalletRack  = this._ai;
       this._mvSrcSub   = this._asub;
       this._mvSrcShelf = this._ash;
       const n = this._itemsToMove.length;
       this.mv_srcLabel = `${this._ai.label} › Sub ${this._asub.number} › ${this._ash.label}`;
-      this.mv_step  = 'isle';
-      this.mv_isles = this._isles.slice();
+      this.mv_step       = 'pallet-rack';
+      this.mv_palletRacks = this._palletRacks.slice();
       this.m_rmItems = false;
       this.m_moveDest = true;
     },
 
-    mvPickIsle(isle) {
-      this._mvDestIsle = isle;
-      this.mv_subs  = isle.subsections;
+    mvPickPalletRack(palletRack) {
+      this._mvDestPalletRack = palletRack;
+      this.mv_subs  = palletRack.subsections;
       this.mv_step  = 'sub';
     },
 
@@ -1619,11 +1830,12 @@ createApp({
           location_type:    'shelf',
           warehouse_id:     wh?.id ?? null,
           warehouse_name:   wh?.name ?? '',
-          isle_id:          this._mvDestIsle.id,
-          isle_label:       this._mvDestIsle.label,
-          isle_row:         this._mvDestIsle.row || '',
+          pallet_rack_id:   this._mvDestPalletRack.id,
+          pallet_rack_label: this._mvDestPalletRack.label,
+          pallet_rack_row:  this._mvDestPalletRack.row || '',
           subsection_id:    this._mvDestSub.id,
           subsection_number: this._mvDestSub.number,
+          subsection_name:  this._mvDestSub.name || '',
           shelf_id:         shelf.id,
           shelf_label:      shelf.label,
           zone_id:          null,
@@ -1633,26 +1845,26 @@ createApp({
         this._mvSrcShelf.items = this._mvSrcShelf.items.filter(i => i.id !== item.id);
         shelf.items.push({
           ...item,
-          isleId: this._mvDestIsle.id, subsectionId: this._mvDestSub.id, shelfId: shelf.id,
+          palletRackId: this._mvDestPalletRack.id, subsectionId: this._mvDestSub.id, shelfId: shelf.id,
         });
       }
       const moved = this._itemsToMove.length;
       this._itemsToMove = [];
       this._selItemIds.clear(); this.mc_selItemIds = []; this.mc_selCount = 0;
       this.m_moveDest = false;
-      this.statusText = `Moved ${moved} item${moved !== 1 ? 's' : ''} to ${this._mvDestIsle.label} › Sub ${this._mvDestSub.number} › ${shelf.label}.`;
+      this.statusText = `Moved ${moved} item${moved !== 1 ? 's' : ''} to ${this._mvDestPalletRack.label} › Sub ${this._mvDestSub.number} › ${shelf.label}.`;
       // Return to source shelf actions
-      this._ai = this._mvSrcIsle; this._asub = this._mvSrcSub; this._ash = this._mvSrcShelf;
+      this._ai = this._mvSrcPalletRack; this._asub = this._mvSrcSub; this._ash = this._mvSrcShelf;
       this.selectShelfFromList(this._mvSrcShelf);
     },
 
     mv_isSrcShelf(shelf) {
-      return this._mvSrcShelf && shelf.id === this._mvSrcShelf.id;
+      return this._mvSrcShelf && shelf.id === this._mvSrcShelf.id;  // unchanged — shelf is generic
     },
 
     mvBack() {
       if (this.mv_step === 'shelf')     { this.mv_step = 'sub'; }
-      else if (this.mv_step === 'sub')  { this.mv_step = 'isle'; }
+      else if (this.mv_step === 'sub')  { this.mv_step = 'pallet-rack'; }
       else { this.m_moveDest = false; this._itemsToMove = []; this.m_rmItems = true; }
     },
 
@@ -1724,19 +1936,19 @@ createApp({
 
     deleteSelectedEntity() {
       if (!this._editMode) return;
-      const totalSelected = this._selIsles.length + this._selZones.length;
+      const totalSelected = this._selPalletRacks.length + this._selZones.length;
       if (totalSelected === 0) return;
 
       if (totalSelected === 1) {
-        const entity = this._selIsles[0] || this._selZones[0];
-        const type   = this._selIsles.length ? 'isle' : 'zone';
+        const entity = this._selPalletRacks[0] || this._selZones[0];
+        const type   = this._selPalletRacks.length ? 'pallet-rack' : 'zone';
         this._pendDelEnt = { entity, type, multi: false };
-        if (type === 'isle') {
+        if (type === 'pallet-rack') {
           const total = entity.subsections.reduce((n, s) => n + s.shelves.reduce((m, sh) => m + sh.items.length, 0), 0);
-          this.mc_delEntTitle = `Delete Isle "${entity.label}"?`;
+          this.mc_delEntTitle = `Delete Pallet Rack "${entity.label}"?`;
           this.mc_delEntMsg   = total > 0
-            ? `This isle contains ${total} item(s). They will all be permanently removed.`
-            : `Isle "${entity.label}" will be permanently removed.`;
+            ? `This pallet rack contains ${total} item(s). They will all be permanently removed.`
+            : `Pallet Rack "${entity.label}" will be permanently removed.`;
         } else {
           const n = entity.items?.length || 0;
           this.mc_delEntTitle = `Delete Zone "${entity.label}"?`;
@@ -1745,10 +1957,10 @@ createApp({
             : `Zone "${entity.label}" will be permanently removed.`;
         }
       } else {
-        const totalItems = this._selIsles.reduce((n, isle) =>
-          n + isle.subsections.reduce((m, s) => m + s.shelves.reduce((k, sh) => k + sh.items.length, 0), 0), 0
+        const totalItems = this._selPalletRacks.reduce((n, palletRack) =>
+          n + palletRack.subsections.reduce((m, s) => m + s.shelves.reduce((k, sh) => k + sh.items.length, 0), 0), 0
         ) + this._selZones.reduce((n, z) => n + (z.items?.length || 0), 0);
-        this._pendDelEnt = { multi: true, isles: [...this._selIsles], zones: [...this._selZones] };
+        this._pendDelEnt = { multi: true, palletRacks: [...this._selPalletRacks], zones: [...this._selZones] };
         this.mc_delEntTitle = `Delete ${totalSelected} selected entities?`;
         this.mc_delEntMsg   = totalItems > 0
           ? `This will permanently remove ${totalSelected} entities and ${totalItems} stored item(s).`
@@ -1762,18 +1974,18 @@ createApp({
       if (!this._pendDelEnt) return;
 
       if (this._pendDelEnt.multi) {
-        const { isles, zones } = this._pendDelEnt;
+        const { palletRacks, zones } = this._pendDelEnt;
         this._pendDelEnt = null;
         this._clearAllSelection();
-        for (const isle of isles) {
-          for (const sub of isle.subsections)
+        for (const palletRack of palletRacks) {
+          for (const sub of palletRack.subsections)
             for (const shelf of sub.shelves)
               for (const item of shelf.items)
                 await this._removeItemFromDB(item.id);
-          this._wh.querySelectorAll(`.edit-handle[data-type="isle"][data-id="${isle.id}"]`).forEach(el => el.remove());
-          isle.element.remove();
-          const idx = this._isles.indexOf(isle);
-          if (idx !== -1) this._isles.splice(idx, 1);
+          this._wh.querySelectorAll(`.edit-handle[data-type="pallet-rack"][data-id="${palletRack.id}"]`).forEach(el => el.remove());
+          palletRack.element.remove();
+          const idx = this._palletRacks.indexOf(palletRack);
+          if (idx !== -1) this._palletRacks.splice(idx, 1);
         }
         for (const zone of zones) {
           for (const item of (zone.items || []))
@@ -1783,8 +1995,8 @@ createApp({
           const idx = this._zones.indexOf(zone);
           if (idx !== -1) this._zones.splice(idx, 1);
         }
-        this.isleCountText = `Isles: ${this._isles.length}`;
-        this.statusText = `Deleted ${isles.length + zones.length} entities.`;
+        this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
+        this.statusText = `Deleted ${palletRacks.length + zones.length} entities.`;
         this._saveLayout();
         return;
       }
@@ -1793,7 +2005,7 @@ createApp({
       this._pendDelEnt = null;
 
       // Delete items from DB
-      if (type === 'isle') {
+      if (type === 'pallet-rack') {
         for (const sub of entity.subsections)
           for (const shelf of sub.shelves)
             for (const item of shelf.items)
@@ -1806,12 +2018,12 @@ createApp({
       this._wh.querySelectorAll(`.edit-handle[data-type="${type}"][data-id="${entity.id}"]`).forEach(el => el.remove());
       entity.element.remove();
 
-      if (type === 'isle') {
-        const idx = this._isles.indexOf(entity);
-        if (idx !== -1) this._isles.splice(idx, 1);
+      if (type === 'pallet-rack') {
+        const idx = this._palletRacks.indexOf(entity);
+        if (idx !== -1) this._palletRacks.splice(idx, 1);
         this._clearAllSelection();
-        this.isleCountText = `Isles: ${this._isles.length}`;
-        this.statusText    = `Isle "${entity.label}" deleted.`;
+        this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
+        this.statusText    = `Pallet Rack "${entity.label}" deleted.`;
       } else {
         const idx = this._zones.indexOf(entity);
         if (idx !== -1) this._zones.splice(idx, 1);
@@ -1834,9 +2046,10 @@ createApp({
       this.insp_fillColor   = entity.fillColor  || '#ffffff';
       this.insp_fillOpacity = entity.fillOpacity ?? 0;
       this.insp_hideLabel   = entity.hideLabel   ?? false;
+      this.insp_hideHeader  = entity.hideHeader  ?? false;
       this.insp_itemFree    = entity.itemFree    ?? false;
       this.insp_nameError   = false;
-      this.insp_shelfOrder  = type === 'isle' ? (entity.facing || 'right') : 'right';
+      this.insp_shelfOrder  = type === 'pallet-rack' ? (entity.facing || 'right') : 'right';
       this.menuCollapsed    = false;  // auto-expand the menu
     },
 
@@ -1852,15 +2065,15 @@ createApp({
       const entity = this._inspEntity;
       if (!entity) return;
       entity.label = name;
-      if (this.insp_type === 'isle') {
+      if (this.insp_type === 'pallet-rack') {
         const newRow = this.insp_row.trim();
         entity.row = newRow;
-        const hdr = entity.element.querySelector('.isle-header');
-        if (hdr) hdr.innerHTML = this._isleHeaderHtml(newRow, name, entity.labelColor);
-        await fetch(`/api/items/isle/${entity.id}/label`, {
+        const hdr = entity.element.querySelector('.pallet-rack-header');
+        if (hdr) hdr.innerHTML = this._palletRackHeaderHtml(newRow, name, entity.labelColor);
+        await fetch(`/api/items/pallet-rack/${entity.id}/label`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isle_label: name, isle_row: newRow }),
+          body: JSON.stringify({ pallet_rack_label: name, pallet_rack_row: newRow }),
         });
       } else {
         const lbl = entity.element.querySelector('.zone-label');
@@ -1871,11 +2084,11 @@ createApp({
     },
 
     applyShelfOrder(facing) {
-      const isle = this._inspEntity;
-      if (!isle || this.insp_type !== 'isle' || isle.facing === facing) return;
-      isle.facing = facing;
+      const palletRack = this._inspEntity;
+      if (!palletRack || this.insp_type !== 'pallet-rack' || palletRack.facing === facing) return;
+      palletRack.facing = facing;
       this.insp_shelfOrder = facing;
-      isle.subsections.forEach(sub => {
+      palletRack.subsections.forEach(sub => {
         sub.element.classList.toggle('facing-right', facing === 'right');
         sub.element.classList.toggle('facing-left',  facing === 'left');
         // Reversing all children of shelvesDiv swaps wall side and shelf order
@@ -1887,59 +2100,59 @@ createApp({
       this._saveLayout();
     },
 
-    // ── Copy / Paste isle ─────────────────────────────────────────────────────
+    // ── Copy / Paste pallet rack ─────────────────────────────────────────────
 
-    _copyIsle() {
-      if (!this._selIsle) return;
-      const isle = this._selIsle;
-      this._copiedIsle = {
-        row: isle.row || '', color: isle.color, shelfColor: isle.shelfColor,
-        fillColor: isle.fillColor || '#ffffff', fillOpacity: isle.fillOpacity ?? 0,
-        labelColor: isle.labelColor || isle.color, rotation: isle.rotation || 0,
-        facing: isle.facing, dimensions: { ...isle.dimensions },
-        shelfLabels: [...isle.shelfLabels],
-        subsectionStart: isle.subsectionStart, subsectionCount: isle.subsectionCount,
-        position: { ...isle.position },
-        subsections: isle.subsections.map(sub => ({
+    _copyPalletRack() {
+      if (!this._selPalletRack) return;
+      const palletRack = this._selPalletRack;
+      this._copiedPalletRack = {
+        row: palletRack.row || '', color: palletRack.color, shelfColor: palletRack.shelfColor,
+        fillColor: palletRack.fillColor || '#ffffff', fillOpacity: palletRack.fillOpacity ?? 0,
+        labelColor: palletRack.labelColor || palletRack.color, rotation: palletRack.rotation || 0,
+        facing: palletRack.facing, dimensions: { ...palletRack.dimensions },
+        shelfLabels: [...palletRack.shelfLabels],
+        subsectionStart: palletRack.subsectionStart, subsectionCount: palletRack.subsectionCount,
+        position: { ...palletRack.position },
+        subsections: palletRack.subsections.map(sub => ({
           number: sub.number, name: sub.name || '',
           shelves: sub.shelves.map(sh => ({ shelfNumber: sh.shelfNumber, label: sh.label })),
         })),
-        sourceLabel: isle.label,
+        sourceLabel: palletRack.label,
       };
-      this.statusText = `Copied "${isle.label}". Press Ctrl+V to paste.`;
+      this.statusText = `Copied "${palletRack.label}". Press Ctrl+V to paste.`;
     },
 
-    _openPasteModal() {
-      if (!this._copiedIsle) return;
-      this.f_pasteIsleName    = this._copiedIsle.sourceLabel + ' (copy)';
-      this.mc_pasteIsleSub    = `Copying "${this._copiedIsle.sourceLabel}" — structure, colors, and shelf order. Items will not be copied.`;
-      this.pasteIsleNameError = false;
-      this.m_pasteIsle = true;
-      this.$nextTick(() => { const el = this.$refs.pasteIsleInput; el?.focus(); el?.select(); });
+    _openPastePalletRackModal() {
+      if (!this._copiedPalletRack) return;
+      this.f_pastePalletRackName    = this._copiedPalletRack.sourceLabel + ' (copy)';
+      this.mc_pastePalletRackSub    = `Copying "${this._copiedPalletRack.sourceLabel}" — structure, colors, and shelf order. Items will not be copied.`;
+      this.pastePalletRackNameError = false;
+      this.m_pastePalletRack = true;
+      this.$nextTick(() => { const el = this.$refs.pastePalletRackInput; el?.focus(); el?.select(); });
     },
 
-    pasteIsle() {
-      const name = this.f_pasteIsleName.trim();
-      if (!name) { this.pasteIsleNameError = true; return; }
-      this.pasteIsleNameError = false;
-      const src = this._copiedIsle;
-      const id  = ++this._isleCounter;
+    pastePalletRack() {
+      const name = this.f_pastePalletRackName.trim();
+      if (!name) { this.pastePalletRackNameError = true; return; }
+      this.pastePalletRackNameError = false;
+      const src = this._copiedPalletRack;
+      const id  = ++this._palletRackCounter;
       const x   = Math.min(src.position.x + 30, Math.max(0, this._wh.clientWidth  - src.dimensions.width));
       const y   = Math.min(src.position.y + 30, Math.max(0, this._wh.clientHeight - src.dimensions.height));
 
       const el = document.createElement('div');
-      el.className = 'isle';
+      el.className = 'pallet-rack';
       Object.assign(el.style, {
         left:`${x}px`, top:`${y}px`, width:`${src.dimensions.width}px`, height:`${src.dimensions.height}px`,
         borderColor: src.color, transform:`rotate(${src.rotation}deg)`,
       });
-      el.dataset.isleId = id;
-      el.innerHTML = `<div class="isle-header">${this._isleHeaderHtml(src.row || '', name, src.labelColor)}</div>`;
+      el.dataset.palletRackId = id;
+      el.innerHTML = `<div class="pallet-rack-header">${this._palletRackHeaderHtml(src.row || '', name, src.labelColor)}</div>`;
 
       const body = document.createElement('div');
-      body.className = 'isle-body';
+      body.className = 'pallet-rack-body';
 
-      const isle = {
+      const palletRack = {
         id, label: name, row: src.row || '',
         color: src.color, shelfColor: src.shelfColor,
         fillColor: src.fillColor, fillOpacity: src.fillOpacity,
@@ -1965,9 +2178,8 @@ createApp({
           subEl.appendChild(nameEl);
         }
         const shelvesDiv = document.createElement('div'); shelvesDiv.className = 'sub-shelves';
-        const wallEl = document.createElement('div');     wallEl.className = 'wall-indicator';
         const shelves = srcSub.shelves.map(ss => ({
-          id: ++this._shelfCounter, isleId: id, subsectionId: subId,
+          id: ++this._shelfCounter, palletRackId: id, subsectionId: subId,
           shelfNumber: ss.shelfNumber, label: ss.label, items: [], element: null,
         }));
         const makeSlot = (sh) => {
@@ -1975,30 +2187,31 @@ createApp({
           slot.className = 'shelf-slot'; slot.textContent = sh.label;
           slot.style.borderColor = src.shelfColor; sh.element = slot; return slot;
         };
-        if (src.facing === 'left') { [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); shelvesDiv.appendChild(wallEl); }
-        else                       { shelvesDiv.appendChild(wallEl); shelves.forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); }
+        if (src.facing === 'left') { [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); }
+        else                       { shelves.forEach(sh => shelvesDiv.appendChild(makeSlot(sh))); }
         subEl.appendChild(shelvesDiv);
-        const subObj = { id: subId, isleId: id, number: srcSub.number, name: srcSub.name || '', element: subEl, shelves };
-        isle.subsections.push(subObj);
+        const subObj = { id: subId, palletRackId: id, number: srcSub.number, name: srcSub.name || '', element: subEl, shelves };
+        palletRack.subsections.push(subObj);
         subEl.addEventListener('click', (ev) => {
           ev.stopPropagation();
-          if (this._drawMode || this._editMode || this._isleDragMoved) return;
-          this._ai = this._isles.find(i => i.id === id);
-          this._openSubsectionActions(subObj);
+          if (this._drawMode || this._editMode || this._palletRackDragMoved) return;
+          this._ai = this._palletRacks.find(i => i.id === id);
+          this._asub = subObj;
+          this._openShelfSelect(subObj);
         });
         body.appendChild(subEl);
       });
 
       el.appendChild(body);
-      this._applyIsleFill(el, src.fillColor, src.fillOpacity);
+      this._applyPalletRackFill(el, src.fillColor, src.fillOpacity);
       this._wh.appendChild(el);
-      this._isles.push(isle);
-      this._attachIsleHandlers(isle);
-      if (this._editMode) this._createHandles(isle, 'isle');
+      this._palletRacks.push(palletRack);
+      this._attachPalletRackHandlers(palletRack);
+      if (this._editMode) this._createHandles(palletRack, 'pallet-rack');
 
-      this.isleCountText = `Isles: ${this._isles.length}`;
-      this.statusText = `Isle "${name}" pasted.`;
-      this.m_pasteIsle = false;
+      this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
+      this.statusText = `Pallet Rack "${name}" pasted.`;
+      this.m_pastePalletRack = false;
       this._saveLayout();
     },
 
@@ -2014,7 +2227,7 @@ createApp({
         dimensions: { ...zone.dimensions }, position: { ...zone.position },
         sourceLabel: zone.label,
       };
-      this._copiedIsle = null;
+      this._copiedPalletRack = null;
       this.statusText = `Copied "${zone.label}". Press Ctrl+V to paste.`;
     },
 
@@ -2102,9 +2315,9 @@ createApp({
 
     closeAllModals() {
       this.m_count = this.m_subs = this.m_labels = this.m_subSel = this.m_shelfSel = false;
-      this.m_addShelf = this.m_shelfAct = this.m_addItem = this.m_rmItems = this.m_confDel = false;
-      this.m_zone = this.m_pasteIsle = this.m_pasteZone = this.m_delEnt = this.m_zoneAct = this.m_zoneItems = false;
-      this.m_moveDest = this.m_subAct = false;
+      this.m_addShelf = this.m_shelfAct = this.m_addItem = this.m_bulkAdd = this.m_viewItems = this.m_itemDetail = this.m_rmItems = this.m_confDel = this.m_confDelSub = false;
+      this.m_zone = this.m_pastePalletRack = this.m_pasteZone = this.m_delEnt = this.m_zoneAct = this.m_zoneItems = false;
+      this.m_moveDest = false;
       this._ai = null; this._asub = null; this._ash = null; this._azfi = null;
       this._selItemIds.clear(); this._selZoneItemIds.clear();
       this._itemsToMove = [];
@@ -2123,62 +2336,150 @@ createApp({
       if (!query) return;
       this._clearHighlights();
       const q = query.toLowerCase();
+      const multiWh = this._warehouses.length > 1;
 
-      const matches = [];
-      for (const isle of this._isles)
-        for (const sub of isle.subsections)
-          for (const shelf of sub.shelves)
-            for (const item of shelf.items)
-              if (item.itemId.toLowerCase().includes(q))
-                matches.push({ type:'isle', isle, sub, shelf, item });
+      // Flush active warehouse into this._warehouses so all data is in one place.
+      this._serializeCurrentWarehouse();
 
-      const zoneMatches = [];
-      for (const zone of this._zones)
-        for (const item of zone.items)
-          if (item.itemId.toLowerCase().includes(q))
-            zoneMatches.push({ type:'zone', zone, item });
-
-      const seenIsles = new Set(), seenSubs = new Set(), seenShelves = new Set(), seenZones = new Set();
-      matches.forEach(({ isle, sub, shelf }) => {
-        if (!seenIsles.has(isle.id))   { isle.element.classList.add('isle-highlight');   seenIsles.add(isle.id); }
-        if (!seenSubs.has(sub.id))     { sub.element.classList.add('sub-highlight');      seenSubs.add(sub.id); }
-        if (shelf.element && !seenShelves.has(shelf.id)) { shelf.element.classList.add('shelf-highlight'); seenShelves.add(shelf.id); }
-      });
-      zoneMatches.forEach(({ zone }) => {
-        if (!seenZones.has(zone.id)) { zone.element.classList.add('zone-highlight'); seenZones.add(zone.id); }
-      });
-
-      const esc = this._escH.bind(this);
+      const esc  = this._escH.bind(this);
       const results = [];
 
-      matches.forEach(({ isle, sub, shelf, item }) => {
-        const html = [
-          `<span class="lbl">I:</span>${esc(isle.label)}`,
-          `<span class="sep">|</span><span class="lbl">SUB:</span>${sub.number}`,
-          `<span class="sep">|</span><span class="lbl">SH:</span>${esc(shelf.label)}`,
-          `<span class="sep">|</span><span class="lbl">ID:</span>${esc(item.itemId)}`,
-          item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${esc(item.type)}`   : '',
-          item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${esc(item.category)}` : '',
-        ].filter(Boolean).join('');
-        results.push({ html, cardStyle:'', scrollTarget: isle.element });
-      });
+      for (let whIdx = 0; whIdx < this._warehouses.length; whIdx++) {
+        const wh       = this._warehouses[whIdx];
+        const isActive = whIdx === this._activeWhIdx;
+        const whLabel  = wh.name || `Warehouse ${whIdx + 1}`;
 
-      zoneMatches.forEach(({ zone, item }) => {
-        const html = [
-          `<span class="lbl">Z:</span>${esc(zone.label)}`,
-          `<span class="sep">|</span><span class="lbl">ID:</span>${esc(item.itemId)}`,
-          item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${esc(item.type)}`   : '',
-          item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${esc(item.category)}` : '',
-        ].filter(Boolean).join('');
-        results.push({ html, cardStyle:'border-left-color:#8b5cf6', scrollTarget: zone.element });
-      });
+        // ── Pallet racks ─────────────────────────────────────────────────────
+        for (const prData of (wh.palletRacks || [])) {
+          for (const subData of (prData.subsections || [])) {
+            for (const shData of (subData.shelves || [])) {
+              for (const item of (shData.items || [])) {
+                if (!item.itemId || !item.itemId.toLowerCase().includes(q)) continue;
 
-      this.searchResults    = results;
+                // For the active warehouse, grab live DOM references and highlight.
+                let liveSub = null, liveShelf = null;
+                if (isActive) {
+                  const livePr = this._palletRacks.find(p => p.id === prData.id);
+                  if (livePr) {
+                    if (!livePr.element.classList.contains('pallet-rack-highlight'))
+                      livePr.element.classList.add('pallet-rack-highlight');
+                    liveSub = livePr.subsections.find(s => s.id === subData.id);
+                    if (liveSub) {
+                      if (!liveSub.element.classList.contains('sub-highlight'))
+                        liveSub.element.classList.add('sub-highlight');
+                      liveShelf = liveSub.shelves.find(s => s.id === shData.id);
+                      if (liveShelf?.element && !liveShelf.element.classList.contains('shelf-highlight'))
+                        liveShelf.element.classList.add('shelf-highlight');
+                    }
+                  }
+                }
+
+                const whPart = multiWh
+                  ? `<span class="lbl">WH:</span>${esc(whLabel)}<span class="sep">|</span>`
+                  : '';
+                const html = [
+                  whPart + `<span class="lbl">PR:</span>${esc(prData.label)}`,
+                  `<span class="sep">|</span><span class="lbl">SUB:</span>${esc(subData.name || String(subData.number))}`,
+                  `<span class="sep">|</span><span class="lbl">SH:</span>${esc(shData.label)}`,
+                  `<span class="sep">|</span><span class="lbl">ID:</span>${esc(item.itemId)}`,
+                  item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${esc(item.type)}`     : '',
+                  item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${esc(item.category)}` : '',
+                ].filter(Boolean).join('');
+
+                const locParts = [
+                  multiWh                ? `WH: ${whLabel}`                          : '',
+                  `PR: ${prData.label}`,
+                  `SUB: ${subData.name || subData.number}`,
+                  `SH: ${shData.label}`,
+                  `ID: ${item.itemId}`,
+                  item.type     ? `T: ${item.type}`     : '',
+                  item.category ? `CAT: ${item.category}` : '',
+                ].filter(Boolean).join(' | ');
+
+                results.push({
+                  html,
+                  locationText: locParts,
+                  cardStyle: '',
+                  scrollTarget: liveSub?.element ?? null,
+                  warehouseIdx:  whIdx,
+                  palletRackId:  prData.id,
+                  subId:         subData.id,
+                  shelfId:       shData.id,
+                  item,
+                  shelf: liveShelf ?? null,
+                });
+              }
+            }
+          }
+        }
+
+        // ── Zones ─────────────────────────────────────────────────────────────
+        for (const zoneData of (wh.zones || [])) {
+          for (const item of (zoneData.items || [])) {
+            if (!item.itemId || !item.itemId.toLowerCase().includes(q)) continue;
+
+            let liveZone = null;
+            if (isActive) {
+              liveZone = this._zones.find(z => z.id === zoneData.id);
+              if (liveZone && !liveZone.element.classList.contains('zone-highlight'))
+                liveZone.element.classList.add('zone-highlight');
+            }
+
+            const whPart = multiWh
+              ? `<span class="lbl">WH:</span>${esc(whLabel)}<span class="sep">|</span>`
+              : '';
+            const html = [
+              whPart + `<span class="lbl">Z:</span>${esc(zoneData.label)}`,
+              `<span class="sep">|</span><span class="lbl">ID:</span>${esc(item.itemId)}`,
+              item.type     ? `<span class="sep">|</span><span class="lbl">T:</span>${esc(item.type)}`     : '',
+              item.category ? `<span class="sep">|</span><span class="lbl">CAT:</span>${esc(item.category)}` : '',
+            ].filter(Boolean).join('');
+
+            const locParts = [
+              multiWh           ? `WH: ${whLabel}`      : '',
+              `Z: ${zoneData.label}`,
+              `ID: ${item.itemId}`,
+              item.type     ? `T: ${item.type}`     : '',
+              item.category ? `CAT: ${item.category}` : '',
+            ].filter(Boolean).join(' | ');
+
+            results.push({
+              html,
+              locationText: locParts,
+              cardStyle: 'border-left-color:#8b5cf6',
+              scrollTarget: liveZone?.element ?? null,
+              warehouseIdx: whIdx,
+              zoneId:       zoneData.id,
+              item,
+              shelf: null,
+            });
+          }
+        }
+      }
+
+      this.searchResults     = results;
       this.showSearchResults = true;
+
+      if (results.length === 0) {
+        this._log(`No items found matching "${query}"`, 'warn');
+      } else {
+        this._log(`Found ${results.length} item${results.length !== 1 ? 's' : ''} matching "${query}"`, 'success');
+        results.forEach(r => this._log(r.locationText, 'success'));
+      }
     },
 
     scrollToResult(result) {
-      result.scrollTarget?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      if (result.warehouseIdx !== this._activeWhIdx) {
+        // Store lookup info; switchTab → _importLayout → _resetView will consume it.
+        this._pendingScrollEl = result.zoneId !== undefined
+          ? { zoneId: result.zoneId }
+          : { palletRackId: result.palletRackId, subId: result.subId, shelfId: result.shelfId };
+        this.switchTab(result.warehouseIdx);
+        return;
+      }
+      // Same warehouse — pan immediately.
+      const el = result.scrollTarget;
+      if (el) this._panToElement(el);
     },
 
     clearSearch() {
@@ -2189,8 +2490,8 @@ createApp({
     },
 
     _clearHighlights() {
-      this._wh.querySelectorAll('.isle-highlight,.sub-highlight,.shelf-highlight,.zone-highlight')
-        .forEach(el => el.classList.remove('isle-highlight','sub-highlight','shelf-highlight','zone-highlight'));
+      this._wh.querySelectorAll('.pallet-rack-highlight,.sub-highlight,.shelf-highlight,.zone-highlight')
+        .forEach(el => el.classList.remove('pallet-rack-highlight','sub-highlight','shelf-highlight','zone-highlight'));
     },
 
     // ── Multi-warehouse / Tabs ────────────────────────────────────────────────
@@ -2207,21 +2508,22 @@ createApp({
       wh.height     = parseFloat(this._wh.style.height) || this._wh.clientHeight;
       wh.background = this._warehouseBg;
       wh.counters   = {
-        isleCounter:       this._isleCounter,
+        palletRackCounter: this._palletRackCounter,
         subsectionCounter: this._subsectionCounter,
         shelfCounter:      this._shelfCounter,
         itemCounter:       this._itemCounter,
         zoneCounter:       this._zoneCounter,
       };
-      wh.isles = this._isles.map(isle => ({
-        id: isle.id, label: isle.label, row: isle.row || '', color: isle.color, shelfColor: isle.shelfColor,
-        fillColor: isle.fillColor || '#ffffff', fillOpacity: isle.fillOpacity ?? 0,
-        labelColor: isle.labelColor || isle.color, rotation: isle.rotation || 0, facing: isle.facing,
-        position: { ...isle.position }, dimensions: { ...isle.dimensions },
-        shelfCount: isle.shelfCount, shelfLabels: [...isle.shelfLabels],
-        subsectionStart: isle.subsectionStart, subsectionCount: isle.subsectionCount,
-        createdAt: isle.createdAt,
-        subsections: isle.subsections.map(sub => ({
+      wh.palletRacks = this._palletRacks.map(pr => ({
+        id: pr.id, label: pr.label, row: pr.row || '', color: pr.color, shelfColor: pr.shelfColor,
+        fillColor: pr.fillColor || '#ffffff', fillOpacity: pr.fillOpacity ?? 0,
+        labelColor: pr.labelColor || pr.color, rotation: pr.rotation || 0, facing: pr.facing,
+        hideHeader: pr.hideHeader ?? false,
+        position: { ...pr.position }, dimensions: { ...pr.dimensions },
+        shelfCount: pr.shelfCount, shelfLabels: [...pr.shelfLabels],
+        subsectionStart: pr.subsectionStart, subsectionCount: pr.subsectionCount,
+        createdAt: pr.createdAt,
+        subsections: pr.subsections.map(sub => ({
           id: sub.id, number: sub.number, name: sub.name || '',
           shelves: sub.shelves.map(sh => ({
             id: sh.id, shelfNumber: sh.shelfNumber, label: sh.label,
@@ -2254,7 +2556,7 @@ createApp({
       this._warehouses.push({
         id, name: `Warehouse ${this._warehouses.length + 1}`,
         width: 800, height: 500, background: null,
-        counters: {}, isles: [], zones: [],
+        counters: {}, palletRacks: [], zones: [],
       });
       this._activeWhIdx = this._warehouses.length - 1;
       this._loadWarehouseDOM(this._warehouses[this._activeWhIdx]);
@@ -2289,11 +2591,19 @@ createApp({
     },
 
     commitRenameTab(idx, e) {
-      const newName = e.target.value.trim() || this._warehouses[idx].name;
+      const oldName = this._warehouses[idx].name;
+      const newName = e.target.value.trim() || oldName;
       this._warehouses[idx].name = newName;
       this.renamingTabIdx = -1;
       this._syncTabs();
       this._saveLayout();
+      if (newName !== oldName) {
+        fetch('/api/items/rename-warehouse', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ old_name: oldName, new_name: newName }),
+        }).catch(err => console.error('Rename warehouse items failed:', err));
+      }
     },
 
     cancelRenameTab(idx) {
@@ -2303,12 +2613,12 @@ createApp({
 
     _loadWarehouseDOM(wh) {
       this._importLayout({
-        warehouse: { width: wh.width || 800, height: wh.height || 500, background: wh.background || null },
-        counters:  wh.counters || {},
-        isles:     wh.isles   || [],
-        zones:     wh.zones   || [],
+        warehouse:   { width: wh.width || 800, height: wh.height || 500, background: wh.background || null },
+        counters:    wh.counters || {},
+        palletRacks: wh.palletRacks || wh.isles || [],
+        zones:       wh.zones   || [],
       });
-      this.statusText = `${wh.name} — ${this._isles.length} isle(s), ${this._zones.length} zone(s).`;
+      this.statusText = `${wh.name} — ${this._palletRacks.length} pallet rack(s), ${this._zones.length} zone(s).`;
     },
 
     // ── Import / Rebuild ──────────────────────────────────────────────────────
@@ -2323,12 +2633,12 @@ createApp({
           id, name: wh.name || `Warehouse ${this._warehouses.length + 1}`,
           width: wh.width || 800, height: wh.height || 500,
           background: wh.background || null, counters: wh.counters || {},
-          isles: wh.isles || [], zones: wh.zones || [],
+          palletRacks: wh.palletRacks || wh.isles || [], zones: wh.zones || [],
         });
       });
       if (!this._warehouses.length) {
         this._warehouses.push({ id: ++this._whTabCounter, name: 'Warehouse 1',
-          width:800, height:500, background:null, counters:{}, isles:[], zones:[] });
+          width:800, height:500, background:null, counters:{}, palletRacks:[], zones:[] });
       }
       this._activeWhIdx = Math.min(data.activeWarehouseIdx || 0, this._warehouses.length - 1);
       this._loadWarehouseDOM(this._warehouses[this._activeWhIdx]);
@@ -2341,8 +2651,8 @@ createApp({
       if (this._editMode) this._cancelEditMode();
       this.closeAllModals();
 
-      this._isles.forEach(i => i.element.remove());
-      this._isles.length = 0;
+      this._palletRacks.forEach(i => i.element.remove());
+      this._palletRacks.length = 0;
       this._zones.forEach(z => z.element.remove());
       this._zones.length = 0;
       this._removeAllHandles();
@@ -2354,16 +2664,16 @@ createApp({
       else this._clearBgSilent();
 
       const c = data.counters || {};
-      this._isleCounter       = c.isleCounter       || 0;
+      this._palletRackCounter = c.palletRackCounter || c.isleCounter || 0;
       this._subsectionCounter = c.subsectionCounter  || 0;
       this._shelfCounter      = c.shelfCounter       || 0;
       this._itemCounter       = c.itemCounter        || 0;
       this._zoneCounter       = c.zoneCounter        || 0;
 
-      (data.isles || []).forEach(d => this._rebuildIsle(d));
+      (data.palletRacks || data.isles || []).forEach(d => this._rebuildPalletRack(d));
       (data.zones || []).forEach(d => this._rebuildZone(d));
 
-      this.isleCountText = `Isles: ${this._isles.length}`;
+      this.palletRackCountText = `Pallet Racks: ${this._palletRacks.length}`;
       // Use rAF to defer until after the browser has computed layout,
       // ensuring getBoundingClientRect() on the viewport returns correct dimensions.
       requestAnimationFrame(() => this._resetView());
@@ -2383,7 +2693,7 @@ createApp({
       this.hasBg = false;
     },
 
-    _rebuildIsle(d) {
+    _rebuildPalletRack(d) {
       const row = d.row || '', sc = d.shelfColor || '#aaaaaa';
       const fillColor   = d.fillColor   || '#ffffff';
       const fillOpacity = d.fillOpacity ?? 0;
@@ -2391,21 +2701,23 @@ createApp({
       const rotation    = d.rotation    || 0;
 
       const el = document.createElement('div');
-      el.className = 'isle';
+      el.className = 'pallet-rack';
       Object.assign(el.style, {
         left:`${d.position.x}px`, top:`${d.position.y}px`,
         width:`${d.dimensions.width}px`, height:`${d.dimensions.height}px`,
         borderColor: d.color, transform:`rotate(${rotation}deg)`,
       });
-      el.dataset.isleId = d.id;
-      el.innerHTML = `<div class="isle-header">${this._isleHeaderHtml(row, d.label, labelColor)}</div>`;
+      const hideHeader = d.hideHeader ?? false;
+      el.dataset.palletRackId = d.id;
+      el.innerHTML = `<div class="pallet-rack-header"${hideHeader ? ' style="display:none"' : ''}>${this._palletRackHeaderHtml(row, d.label, labelColor)}</div>`;
 
       const body = document.createElement('div');
-      body.className = 'isle-body';
+      body.className = 'pallet-rack-body';
 
-      const isle = {
+      const palletRack = {
         id: d.id, label: d.label, row, color: d.color, shelfColor: sc,
         fillColor, fillOpacity, labelColor, rotation, facing: d.facing,
+        hideHeader,
         position: { ...d.position }, dimensions: { ...d.dimensions }, element: el,
         shelfCount: (d.shelfLabels || []).length, shelfLabels: [...(d.shelfLabels || [])],
         subsectionStart: d.subsectionStart, subsectionCount: d.subsectionCount,
@@ -2427,10 +2739,9 @@ createApp({
         }
 
         const shelvesDiv = document.createElement('div'); shelvesDiv.className = 'sub-shelves';
-        const wallEl     = document.createElement('div'); wallEl.className = 'wall-indicator';
 
         const shelves = (sd.shelves || []).map(shd => ({
-          id: shd.id, isleId: d.id, subsectionId: sd.id,
+          id: shd.id, palletRackId: d.id, subsectionId: sd.id,
           shelfNumber: shd.shelfNumber, label: shd.label,
           items: (shd.items || []).map(item => ({ ...item })), element: null,
         }));
@@ -2443,30 +2754,29 @@ createApp({
 
         if (d.facing === 'left') {
           [...shelves].reverse().forEach(sh => shelvesDiv.appendChild(makeSlot(sh)));
-          shelvesDiv.appendChild(wallEl);
         } else {
-          shelvesDiv.appendChild(wallEl);
           shelves.forEach(sh => shelvesDiv.appendChild(makeSlot(sh)));
         }
         subEl.appendChild(shelvesDiv);
 
-        const subObj = { id: sd.id, isleId: d.id, number: sd.number, name: sd.name || '', element: subEl, shelves };
-        isle.subsections.push(subObj);
+        const subObj = { id: sd.id, palletRackId: d.id, number: sd.number, name: sd.name || '', element: subEl, shelves };
+        palletRack.subsections.push(subObj);
 
         subEl.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (this._drawMode || this._editMode || this._isleDragMoved) return;
-          this._ai = this._isles.find(i => i.id === d.id);
-          this._openSubsectionActions(subObj);
+          if (this._drawMode || this._editMode || this._palletRackDragMoved) return;
+          this._ai = this._palletRacks.find(i => i.id === d.id);
+          this._asub = subObj;
+          this._openShelfSelect(subObj);
         });
         body.appendChild(subEl);
       });
 
       el.appendChild(body);
-      this._applyIsleFill(el, fillColor, fillOpacity);
+      this._applyPalletRackFill(el, fillColor, fillOpacity);
       this._wh.appendChild(el);
-      this._isles.push(isle);
-      this._attachIsleHandlers(isle);
+      this._palletRacks.push(palletRack);
+      this._attachPalletRackHandlers(palletRack);
     },
 
     _rebuildZone(d) {
