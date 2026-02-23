@@ -2556,6 +2556,17 @@ const _vueApp = createApp({
       // Same warehouse — pan immediately.
       const el = result.scrollTarget;
       if (el) this._panToElement(el);
+      // Restart pulsing on the specific element the user clicked.
+      const pulseEl = result.shelf?.element ?? (result.zoneId !== undefined ? result.scrollTarget : null);
+      const pulseClass  = result.shelf?.element ? 'shelf-highlight'  : 'zone-highlight';
+      const staticClass = result.shelf?.element ? 'shelf-highlight-static' : 'zone-highlight-static';
+      if (pulseEl) {
+        pulseEl.classList.remove(pulseClass, staticClass);
+        pulseEl.style.removeProperty('background'); // clear any inline !important from _stopPulsing
+        void pulseEl.offsetWidth; // force reflow to restart CSS animation
+        pulseEl.classList.add(pulseClass);
+        this._scheduleHighlightClear();
+      }
     },
 
     clearSearch() {
@@ -2568,13 +2579,43 @@ const _vueApp = createApp({
     _clearHighlights() {
       clearTimeout(this._highlightTimer);
       this._highlightTimer = null;
-      this._wh.querySelectorAll('.pallet-rack-highlight,.sub-highlight,.shelf-highlight,.zone-highlight')
-        .forEach(el => el.classList.remove('pallet-rack-highlight','sub-highlight','shelf-highlight','zone-highlight'));
+      // Shelves: remove class + any inline override set by _stopPulsing
+      this._wh.querySelectorAll('.shelf-highlight,.shelf-highlight-static').forEach(el => {
+        el.classList.remove('shelf-highlight', 'shelf-highlight-static');
+        el.style.removeProperty('background');
+      });
+      // Zones: remove class + inline override, then restore the zone's own fill color
+      this._wh.querySelectorAll('.zone-highlight,.zone-highlight-static').forEach(el => {
+        el.classList.remove('zone-highlight', 'zone-highlight-static');
+        el.style.removeProperty('background');
+        const zone = this._zones.find(z => z.id === parseInt(el.dataset.zoneId));
+        if (zone) this._applyZoneFill(el, zone.color, zone.fillOpacity);
+      });
+      this._wh.querySelectorAll('.pallet-rack-highlight,.sub-highlight')
+        .forEach(el => el.classList.remove('pallet-rack-highlight', 'sub-highlight'));
+    },
+
+    _stopPulsing() {
+      clearTimeout(this._highlightTimer);
+      this._highlightTimer = null;
+      // Stop shelf pulsing — force static orange via inline !important (beats any CSS cascade)
+      this._wh.querySelectorAll('.shelf-highlight').forEach(el => {
+        el.classList.remove('shelf-highlight');
+        el.classList.add('shelf-highlight-static');
+        el.style.setProperty('background', 'rgba(251,146,60,0.55)', 'important');
+      });
+      // Stop zone pulsing — force static yellow via inline !important
+      this._wh.querySelectorAll('.zone-highlight').forEach(el => {
+        el.classList.remove('zone-highlight');
+        el.classList.add('zone-highlight-static');
+        el.style.setProperty('background', 'rgba(254,240,138,0.4)', 'important');
+      });
+      // pallet-rack-highlight and sub-highlight are left untouched
     },
 
     _scheduleHighlightClear() {
       clearTimeout(this._highlightTimer);
-      this._highlightTimer = setTimeout(() => this._clearHighlights(), 20_000);
+      this._highlightTimer = setTimeout(() => this._stopPulsing(), 20_000);
     },
 
     // ── Navigation dropdowns ──────────────────────────────────────────────────
