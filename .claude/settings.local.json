@@ -16,7 +16,10 @@
       "Bash(cmd /c \"taskkill /PID 52504 /F\")",
       "Bash(cmd /c \"netstat -ano | findstr :8000\")",
       "Bash(cmd /c \"netsh int ipv4 show excludedportrange protocol=tcp\")",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(cd /c/s3711/git/tiny-erp && .venv/Scripts/pip install bcrypt 2>&1)",
+      "Bash(cd:*)",
+      "Bash(cd /c/s3711/git/tiny-erp && .venv/Scripts/python.exe -c \"import app; print\\('app.py imports OK'\\)\" 2>&1)"
     ]
   }
 }

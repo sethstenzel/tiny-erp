@@ -1,20 +1,21 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Cookie, Depends, Response, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+import asyncio
 import sqlite3
 import json
 import uuid
+import shutil
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
+import bcrypt
 
 DB_PATH = "warehouse.sqlite"
-
-app = FastAPI(title="IndSurp Warehouse API")
-
-# In-memory session store: token -> {username, role}
-sessions: dict[str, dict] = {}
+BACKUP_DIR = Path("db_backups")
 
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -35,6 +36,62 @@ def _make_logger(name: str, path: str) -> logging.Logger:
 
 backend_log = _make_logger("backend", "backend_errors.log")
 vue_log     = _make_logger("vue",     "vue_errors.log")
+
+
+# ── Periodic backup scheduler ─────────────────────────────────────────────────
+
+def _write_backup(dest: Path) -> None:
+    shutil.copy2(DB_PATH, dest)
+
+
+async def _backup_loop() -> None:
+    """Run every 60 s; create any missing periodic backups for the current period."""
+    BACKUP_DIR.mkdir(exist_ok=True)
+    while True:
+        try:
+            now = datetime.now()
+            iso = now.isocalendar()
+
+            # Monthly — warehouse_bak_m{month}_{year}.sqlite
+            monthly = BACKUP_DIR / f"warehouse_bak_m{now.month}_{now.year}.sqlite"
+            if not monthly.exists():
+                _write_backup(monthly)
+                backend_log.info("Monthly backup created: %s", monthly.name)
+
+            # Weekly — warehouse_bak_w{week}_{iso_year}.sqlite
+            weekly = BACKUP_DIR / f"warehouse_bak_w{iso.week}_{iso.year}.sqlite"
+            if not weekly.exists():
+                _write_backup(weekly)
+                backend_log.info("Weekly backup created: %s", weekly.name)
+
+            # Daily — warehouse_bak_{DD}_{MM}_{YYYY}.sqlite
+            daily = BACKUP_DIR / f"warehouse_bak_{now.day:02d}_{now.month:02d}_{now.year}.sqlite"
+            if not daily.exists():
+                _write_backup(daily)
+                backend_log.info("Daily backup created: %s", daily.name)
+
+            # Hourly — warehouse_bak_{DD}_{MM}_{YYYY}_h{H}.sqlite
+            hourly = BACKUP_DIR / f"warehouse_bak_{now.day:02d}_{now.month:02d}_{now.year}_h{now.hour}.sqlite"
+            if not hourly.exists():
+                _write_backup(hourly)
+                backend_log.info("Hourly backup created: %s", hourly.name)
+
+        except Exception:
+            backend_log.error("Backup scheduler error", exc_info=True)
+
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(_backup_loop())
+    yield
+
+
+app = FastAPI(title="IndSurp Warehouse API", lifespan=lifespan)
+
+# In-memory session store: token -> {username, role}
+sessions: dict[str, dict] = {}
 
 
 # ── HTTP middleware — log 4xx/5xx and unhandled exceptions ───────────────────
@@ -106,14 +163,24 @@ def init_db():
                 role     TEXT NOT NULL DEFAULT 'worker'
             );
         """)
-        conn.execute(
-            "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
-            ("admin", "admin", "admin"),
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)",
-            ("worker", "worker", "worker"),
-        )
+        for _username, _plain, _role in [("admin", "admin", "admin"), ("worker", "worker", "worker")]:
+            existing = conn.execute(
+                "SELECT password FROM users WHERE username = ?", (_username,)
+            ).fetchone()
+            if existing is None:
+                _hashed = bcrypt.hashpw(_plain.encode(), bcrypt.gensalt()).decode()
+                conn.execute(
+                    "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+                    (_username, _hashed, _role),
+                )
+            elif not existing["password"].startswith("$2"):
+                # Migrate legacy plaintext password to bcrypt hash
+                _hashed = bcrypt.hashpw(existing["password"].encode(), bcrypt.gensalt()).decode()
+                conn.execute(
+                    "UPDATE users SET password = ? WHERE username = ?",
+                    (_hashed, _username),
+                )
+                backend_log.info("Migrated plaintext password to bcrypt hash for user '%s'", _username)
         # Add new columns to items if they don't exist yet (migration)
         existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)").fetchall()}
         if "url" not in existing_cols:
@@ -218,11 +285,11 @@ class LoginBody(BaseModel):
 def login(body: LoginBody, response: Response):
     conn = get_db()
     row = conn.execute(
-        "SELECT * FROM users WHERE username = ? AND password = ?",
-        (body.username, body.password),
+        "SELECT * FROM users WHERE username = ?",
+        (body.username,),
     ).fetchone()
     conn.close()
-    if not row:
+    if not row or not bcrypt.checkpw(body.password.encode(), row["password"].encode()):
         backend_log.warning("Failed login attempt for user '%s'", body.username)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = str(uuid.uuid4())
@@ -267,7 +334,6 @@ class LayoutBody(BaseModel):
 
 @app.post("/api/backup-db")
 def backup_db(user: dict = Depends(require_admin)):
-    import shutil
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_path = f"warehouse_backup_{ts}.sqlite"
     shutil.copy2(DB_PATH, backup_path)
