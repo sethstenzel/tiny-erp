@@ -17,3 +17,4 @@ vue_errors.log
 
 # backups
 warehouse_ba*
+db_backups/*

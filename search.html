@@ -180,8 +180,9 @@
       color: #60a5fa; text-decoration: none; word-break: break-all;
     }
     .cell-url a:hover { text-decoration: underline; }
-    .cell-notes { color: #94a3b8; font-style: italic; white-space: pre-wrap; word-break: break-word; }
-    .cell-location { white-space: nowrap; }
+    .cell-notes { color: #94a3b8; font-style: italic; white-space: pre-wrap; word-break: break-word; min-width: 8rem; }
+    .cell-url { min-width: 8rem; }
+    .cell-location { white-space: nowrap; max-width: none; }
     .loc-text { font-size: 12px; color: #94a3b8; }
     .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; }
     .tag-chip {
@@ -202,8 +203,15 @@
 
     .state-initial .icon { opacity: 0.3; }
 
-    /* ── Delete row button ── */
-    .cell-actions { white-space: nowrap; vertical-align: middle; }
+    /* ── Row action buttons ── */
+    .cell-actions { white-space: nowrap; vertical-align: middle; display: flex; gap: 6px; align-items: center; }
+    .btn-edit-row {
+      padding: 4px 10px; background: transparent; color: #60a5fa;
+      border: 1px solid #1e3a5f; border-radius: 6px;
+      font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .btn-edit-row:hover { background: #1e3a5f; color: #93c5fd; border-color: #3b82f6; }
     .btn-delete-row {
       padding: 4px 10px; background: transparent; color: #f87171;
       border: 1px solid #7f1d1d; border-radius: 6px;
@@ -244,6 +252,88 @@
       transition: background 0.15s;
     }
     .btn-confirm-delete:hover { background: #7f1d1d; }
+
+    /* ── Edit item modal ── */
+    #editModal { pointer-events: none; }
+    #editModal .edit-modal { pointer-events: auto; }
+    .edit-modal {
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      padding: 28px 28px 22px; max-width: 560px; width: 95%;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto;
+    }
+    .edit-modal-title {
+      font-size: 16px; font-weight: 700; color: #e2e8f0; margin-bottom: 20px;
+    }
+    .edit-form-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-bottom: 22px;
+    }
+    .edit-form-grid .full-width { grid-column: 1 / -1; }
+    .edit-field { display: flex; flex-direction: column; gap: 5px; }
+    .edit-field label {
+      font-size: 11px; font-weight: 600; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .edit-field input,
+    .edit-field textarea {
+      padding: 8px 10px;
+      background: #0f172a; border: 1px solid #334155; border-radius: 7px;
+      color: #e2e8f0; font-family: inherit; font-size: 13px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .edit-field input:focus,
+    .edit-field textarea:focus { border-color: #3b82f6; }
+    .edit-field textarea { resize: vertical; min-height: 70px; }
+    .edit-modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn-edit-save {
+      padding: 7px 18px; background: #3b82f6; color: #fff; border: none;
+      border-radius: 7px; font-family: inherit; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-edit-save:hover { background: #2563eb; }
+    .btn-edit-save:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-edit-cancel {
+      padding: 7px 16px; background: transparent; color: #94a3b8;
+      border: 1px solid #334155; border-radius: 7px;
+      font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-edit-cancel:hover { color: #e2e8f0; border-color: #64748b; }
+    .edit-error { font-size: 12px; color: #f87171; margin-right: auto; align-self: center; }
+    /* ── Mobile ── */
+    @media (max-width: 640px) {
+      /* Header — hide non-essential text, reduce padding */
+      .app-header { padding: 0 12px; gap: 8px; }
+      .page-title { display: none; }
+      .user-name  { display: none; }
+      .brand-name { font-size: 18px; }
+      .user-info  { gap: 6px; }
+
+      /* Page & panel padding */
+      .page-content { padding: 14px 10px 40px; }
+      .search-panel { padding: 14px 12px; }
+
+      /* Quick-row: stack input above buttons */
+      .quick-row { flex-wrap: wrap; }
+      .quick-row input { min-width: 0; }
+
+      /* Action row: allow wrap so status text doesn't push buttons off */
+      .action-row { flex-wrap: wrap; }
+
+      /* Table: tighter cells, allow horizontal scroll (already enabled) */
+      thead th { padding: 8px 10px; }
+      tbody td  { padding: 8px 10px; font-size: 12px; }
+      .cell-location { white-space: normal; }
+
+      /* Row action buttons: stack vertically so they don't widen the column */
+      .cell-actions { flex-direction: column; gap: 4px; align-items: flex-start; }
+
+      /* Edit modal: single column, tighter padding */
+      .edit-form-grid { grid-template-columns: 1fr; }
+      .edit-modal { padding: 20px 14px 16px; width: 98%; }
+
+      /* Confirm modal */
+      .confirm-modal { padding: 20px 16px 16px; }
+    }
   </style>
 </head>
 <body>
@@ -370,6 +460,44 @@
 
   </div>
 
+  <!-- Edit item modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="edit-modal">
+      <div class="edit-modal-title">Edit Item</div>
+      <div class="edit-form-grid">
+        <div class="edit-field">
+          <label>Item ID</label>
+          <input type="text" id="edit_item_id" />
+        </div>
+        <div class="edit-field">
+          <label>Item Type</label>
+          <input type="text" id="edit_item_type" />
+        </div>
+        <div class="edit-field">
+          <label>Category</label>
+          <input type="text" id="edit_category" />
+        </div>
+        <div class="edit-field">
+          <label>Tags (comma-separated)</label>
+          <input type="text" id="edit_tags" />
+        </div>
+        <div class="edit-field full-width">
+          <label>URL</label>
+          <input type="text" id="edit_url" />
+        </div>
+        <div class="edit-field full-width">
+          <label>Notes</label>
+          <textarea id="edit_notes"></textarea>
+        </div>
+      </div>
+      <div class="edit-modal-actions">
+        <span class="edit-error" id="editError"></span>
+        <button class="btn-edit-cancel" id="editCancelBtn">Cancel</button>
+        <button class="btn-edit-save" id="editSaveBtn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Confirm delete modal -->
   <div class="modal-overlay" id="deleteModal">
     <div class="confirm-modal">
@@ -385,6 +513,7 @@
   <script>
     // ── Auth ──────────────────────────────────────────────────────────────────
     let currentUser = null;
+    let itemsCache = {}; // id -> item object
 
     async function checkAuth() {
       const resp = await fetch('/api/me');
@@ -402,10 +531,12 @@
     });
 
     // ── Search ────────────────────────────────────────────────────────────────
+    function stripLeadingZeros(s) { return s.replace(/^0+(?=.)/, ''); }
+
     function getParams() {
       const p = new URLSearchParams();
       const add = (id, key) => {
-        const v = document.getElementById(id).value.trim();
+        const v = stripLeadingZeros(document.getElementById(id).value.trim());
         if (v) p.set(key, v);
       };
       add('q',                'q');
@@ -478,6 +609,8 @@
     }
 
     function renderResults(items) {
+      itemsCache = {};
+      items.forEach(item => { itemsCache[item.id] = item; });
       const section = document.getElementById('resultsSection');
       if (items.length === 0) {
         section.innerHTML = `
@@ -502,6 +635,7 @@
           <td class="cell-location">${formatLocation(item)}</td>
           <td class="cell-date">${formatDate(item.added_at)}</td>
           <td class="cell-actions">
+            <button class="btn-edit-row" onclick="openEditModal(${item.id})">Edit</button>
             <button class="btn-delete-row" onclick="openDeleteConfirm(${item.id}, '${esc(item.item_id)}')">Delete</button>
           </td>
         </tr>`).join('');
@@ -543,6 +677,7 @@
         const items = await resp.json();
         renderResults(items);
         statusEl.textContent = '';
+        document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (err) {
         statusEl.textContent = 'Search failed.';
         console.error(err);
@@ -561,6 +696,93 @@
     // Enter key on any input triggers search
     document.querySelectorAll('input').forEach(el => {
       el.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+    });
+
+    // ── Edit item ─────────────────────────────────────────────────────────────
+    let editingItemId = null;
+
+    function openEditModal(itemDbId) {
+      const item = itemsCache[itemDbId];
+      if (!item) return;
+      editingItemId = itemDbId;
+      document.getElementById('edit_item_id').value   = item.item_id   || '';
+      document.getElementById('edit_item_type').value = item.item_type || '';
+      document.getElementById('edit_category').value  = item.category  || '';
+      document.getElementById('edit_tags').value      = item.tags      || '';
+      document.getElementById('edit_url').value       = item.url       || '';
+      document.getElementById('edit_notes').value     = item.notes     || '';
+      document.getElementById('editError').textContent = '';
+      document.getElementById('editModal').classList.add('open');
+    }
+
+    function closeEditModal() {
+      document.getElementById('editModal').classList.remove('open');
+      editingItemId = null;
+    }
+
+    document.getElementById('editCancelBtn').addEventListener('click', closeEditModal);
+
+    document.getElementById('editSaveBtn').addEventListener('click', async () => {
+      if (!editingItemId) return;
+      const saveBtn = document.getElementById('editSaveBtn');
+      const errorEl = document.getElementById('editError');
+      const itemId = document.getElementById('edit_item_id').value.trim().replace(/^0+(?=.)/, '').toUpperCase();
+      if (!itemId || itemId.length < 3) { errorEl.textContent = 'Item ID must be at least 3 characters.'; return; }
+      saveBtn.disabled = true;
+      errorEl.textContent = '';
+      const cached = itemsCache[editingItemId];
+      const payload = {
+        item_id:    itemId,
+        item_type:  document.getElementById('edit_item_type').value.trim().toUpperCase(),
+        category:   document.getElementById('edit_category').value.trim().toUpperCase(),
+        tags:       document.getElementById('edit_tags').value.trim().toUpperCase(),
+        url:        document.getElementById('edit_url').value.trim(),
+        notes:      document.getElementById('edit_notes').value.trim(),
+        // preserve location fields unchanged
+        added_at:          cached.added_at          || '',
+        location_type:     cached.location_type     || 'shelf',
+        warehouse_id:      cached.warehouse_id      ?? null,
+        warehouse_name:    cached.warehouse_name    || '',
+        pallet_rack_id:    cached.pallet_rack_id    ?? null,
+        pallet_rack_label: cached.pallet_rack_label || '',
+        pallet_rack_row:   cached.pallet_rack_row   || '',
+        subsection_id:     cached.subsection_id     ?? null,
+        subsection_number: cached.subsection_number ?? null,
+        subsection_name:   cached.subsection_name   || '',
+        shelf_id:          cached.shelf_id          ?? null,
+        shelf_label:       cached.shelf_label       || '',
+        zone_id:           cached.zone_id           ?? null,
+        zone_label:        cached.zone_label        || '',
+      };
+      try {
+        const resp = await fetch(`/api/items/${editingItemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (resp.status === 401) { window.location.href = '/login'; return; }
+        if (!resp.ok) { errorEl.textContent = 'Save failed. Please try again.'; return; }
+        // Update cache and re-render row in-place
+        Object.assign(itemsCache[editingItemId], payload);
+        const row = document.querySelector(`tr[data-item-id="${editingItemId}"]`);
+        if (row) {
+          const updated = itemsCache[editingItemId];
+          row.cells[0].innerHTML = `<span class="cell-id" style="font-weight:600;color:#e2e8f0">${esc(updated.item_id)}</span>`;
+          row.cells[1].textContent = updated.item_type || '—';
+          row.cells[2].textContent = updated.category  || '—';
+          row.cells[3].innerHTML   = renderTags(updated.tags);
+          row.cells[4].innerHTML   = updated.url
+            ? `<a href="${esc(updated.url)}" target="_blank" rel="noopener noreferrer">${esc(updated.url)}</a>`
+            : '—';
+          row.cells[5].textContent = updated.notes || '—';
+        }
+        closeEditModal();
+      } catch (err) {
+        console.error(err);
+        errorEl.textContent = 'Save failed. Please try again.';
+      } finally {
+        saveBtn.disabled = false;
+      }
     });
 
     // ── Delete item ───────────────────────────────────────────────────────────

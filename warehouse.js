@@ -44,12 +44,27 @@ const _vueApp = createApp({
       m_rmItems:   false,
       m_confDel:    false,
       m_confDelSub: false,
+      m_confDelItem: false,
+      m_reorderTabs: false,
+      reorderList:   [],
+      reorderSelIdx: -1,
       m_bulkAdd:     false,
+      m_zoneBulkAdd: false,
       m_viewItems:   false,
       m_itemDetail:  false,
+      m_editItem:    false,
       mc_activeItem: null,
-      f_bulkText:   '',
-      bulkAddError: '',
+      f_editItemId:       '',
+      f_editItemType:     '',
+      f_editItemCategory: '',
+      f_editItemTags:     '',
+      f_editItemUrl:      '',
+      f_editItemNotes:    '',
+      editItemError:      '',
+      f_bulkText:       '',
+      bulkAddError:     '',
+      f_zoneBulkText:   '',
+      zoneBulkAddError: '',
       m_zone:      false,
       m_pastePalletRack: false,
       m_pasteZone: false,
@@ -59,6 +74,11 @@ const _vueApp = createApp({
       m_zoneAct:   false,
       m_zoneItems: false,
       m_moveDest:  false,
+      relocateMode: false,
+
+      // Connectivity
+      isOffline:     false,
+      m_offlineModal: false,
 
       // Inspector panel (floating menu)
       insp_show:        false,
@@ -118,6 +138,7 @@ const _vueApp = createApp({
       palletRackNameError:      false,
       addShelfNameError:  false,
       itemIdError:        false,
+      addItemLocErr:      '',
       zoneLabelError:     false,
       pastePalletRackNameError: false,
       pasteZoneNameError: false,
@@ -146,6 +167,7 @@ const _vueApp = createApp({
       mc_confDelMsg:     '',
       mc_showDelBtn:     true,
       mc_confDelSubMsg:  '',
+      mc_confDelItemMsg: '',
       mc_delEntTitle:    'Delete?',
       mc_delEntMsg:      '',
       mc_zoneActTitle:   'Zone',
@@ -300,7 +322,9 @@ const _vueApp = createApp({
     this._initNonReactive();
     this._initDOMRefs();
     this._initEventListeners();
-    this._loadFromDB();
+    await this._loadFromDB();
+    this._startLayoutPoll();
+    this._startPing();
   },
 
   /* ══════════════════════════════════════════
@@ -400,6 +424,13 @@ const _vueApp = createApp({
       this._mvSrcPalletRack = null; this._mvSrcSub = null; this._mvSrcShelf = null;
       this._mvDestPalletRack = null; this._mvDestSub = null;
 
+      // Single-item relocate (Move button in item detail)
+      this._relocateItem       = null;
+      this._relocateSrcShelf   = null;
+      this._relocateSrcZone    = null;
+      this._relocateSrcWhIdx   = -1;
+      this._activeItemDetailZone = null;
+
       // Edit pallet rack properties
       this._editingPalletRack = null;
 
@@ -411,8 +442,39 @@ const _vueApp = createApp({
       this._SNAP = 12;
       this._EDGES = ['nw','n','ne','e','se','s','sw','w'];
 
+      // Touch / pinch-zoom
+      this._isPinching      = false;
+      this._touchPinchDist  = 0;
+      this._touchPinchMidX  = 0;
+      this._touchPinchMidY  = 0;
+
+      // Touch double-tap detection for entity activation (normal mode)
+      this._tapStartX   = 0;
+      this._tapStartY   = 0;
+      this._tapStartEl  = null;
+      this._lastTapTime = 0;
+      this._lastTapEl   = null;
+
+      // Touch double-tap detection for inspector (edit mode)
+      this._editTapEl       = null;
+      this._editTapX        = 0;
+      this._editTapY        = 0;
+      this._lastEditTapEl   = null;
+      this._lastEditTapTime = 0;
+
+      // Live polling
+      this._pollSeq      = 0;
+      this._pollPending  = 0;  // non-zero = a newer seq is waiting to be applied
+      this._pollTimer    = null;
+      this._silentImport = false;
+
+      // Keep-alive / connectivity
+      this._pingTimer     = null;
+      this._offlineSince  = null;  // Date.now() of first consecutive ping failure
+
       // Cross-warehouse scroll target (set before switchTab, consumed by _resetView)
       this._pendingScrollEl = null;
+
 
       // Session view-state persistence (pan/zoom across page navigations)
       // Read BEFORE any _resetView() can overwrite sessionStorage.
@@ -526,6 +588,295 @@ const _vueApp = createApp({
       });
       document.addEventListener('dragover', e => e.preventDefault());
       document.addEventListener('drop',     e => e.preventDefault());
+
+      this._initTouchEventListeners();
+    },
+
+    _initTouchEventListeners() {
+      const vp = this._vp;
+
+      // ── touchstart ──────────────────────────────────────────────────────────
+      vp.addEventListener('touchstart', (e) => {
+        // Two-finger pinch-to-zoom
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          this._isPinching = true;
+          this._isPanning  = false;
+          this._tapStartEl = null;
+          this._vp.classList.remove('panning');
+          const t0 = e.touches[0], t1 = e.touches[1];
+          this._touchPinchDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+          const vr = vp.getBoundingClientRect();
+          this._touchPinchMidX = (t0.clientX + t1.clientX) / 2 - vr.left;
+          this._touchPinchMidY = (t0.clientY + t1.clientY) / 2 - vr.top;
+          return;
+        }
+
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0];
+
+        // Edit handle (resize / rotate)
+        const handle = e.target.closest('.edit-handle');
+        if (handle && this._editMode) {
+          e.preventDefault(); e.stopPropagation();
+          const type   = handle.dataset.type;
+          const id     = parseInt(handle.dataset.id);
+          const entity = type === 'pallet-rack'
+            ? this._palletRacks.find(i => i.id === id)
+            : this._zones.find(z => z.id === id);
+          if (!entity) return;
+          if (handle.dataset.edge === 'rotate') {
+            this._isRotating = true;
+            this._rotEntity = entity; this._rotEntityType = type;
+            this._rotStartAngle = entity.rotation || 0;
+            const wr = this._wh.getBoundingClientRect();
+            const bx = parseFloat(getComputedStyle(this._wh).borderLeftWidth) || 0;
+            const by = parseFloat(getComputedStyle(this._wh).borderTopWidth)  || 0;
+            this._rotCX = wr.left + (entity.position.x + entity.dimensions.width  / 2 + bx) * this._currentZoom;
+            this._rotCY = wr.top  + (entity.position.y + entity.dimensions.height / 2 + by) * this._currentZoom;
+            this._rotStartMouseAngle = Math.atan2(t.clientY - this._rotCY, t.clientX - this._rotCX) * 180 / Math.PI;
+          } else {
+            this._isEntResize = true;
+            this._entResizeTarget = entity; this._entResizeType = type;
+            this._entResizeEdge   = handle.dataset.edge;
+            this._entResizeSMX = t.clientX; this._entResizeSMY = t.clientY;
+            this._entResizeSX  = entity.position.x;    this._entResizeSY  = entity.position.y;
+            this._entResizeSW  = entity.dimensions.width; this._entResizeSH = entity.dimensions.height;
+          }
+          return;
+        }
+
+        // Edit mode: entity drag (pallet rack)
+        const palletRackEl = e.target.closest('.pallet-rack');
+        if (this._editMode && palletRackEl) {
+          e.preventDefault();
+          const palletRack = this._palletRacks.find(i => i.element === palletRackEl);
+          if (!palletRack) return;
+          if (!this._selPalletRacks.includes(palletRack)) {
+            this._clearAllSelection();
+            this._addPalletRackToSelection(palletRack);
+          }
+          const totalSel = this._selPalletRacks.length + this._selZones.length;
+          if (totalSel > 1) {
+            this._isDragMulti = true;
+            this._dragMultiSMX = t.clientX; this._dragMultiSMY = t.clientY;
+            this._multiDragStartPositions = [
+              ...this._selPalletRacks.map(i => ({ entity: i, type: 'pallet-rack', sx: i.position.x, sy: i.position.y })),
+              ...this._selZones.map(z => ({ entity: z, type: 'zone', sx: z.position.x, sy: z.position.y })),
+            ];
+            this._palletRackDragMoved = false;
+          } else {
+            this._isDragPalletRack = true; this._dragPalletRack = palletRack;
+            this._palletRackDragMoved = false;
+            this._palletRackSMX = t.clientX; this._palletRackSMY = t.clientY;
+            this._palletRackSX  = palletRack.position.x; this._palletRackSY = palletRack.position.y;
+          }
+          // Track for double-tap inspector opening
+          this._editTapEl = palletRackEl;
+          this._editTapX  = t.clientX;
+          this._editTapY  = t.clientY;
+          return;
+        }
+
+        // Edit mode: entity drag (zone)
+        const zoneEl = e.target.closest('.zone');
+        if (this._editMode && zoneEl) {
+          e.preventDefault();
+          const zone = this._zones.find(z => z.element === zoneEl);
+          if (!zone) return;
+          if (!this._selZones.includes(zone)) {
+            this._clearAllSelection();
+            this._addZoneToSelection(zone);
+          }
+          const totalSel = this._selPalletRacks.length + this._selZones.length;
+          if (totalSel > 1) {
+            this._isDragMulti = true;
+            this._dragMultiSMX = t.clientX; this._dragMultiSMY = t.clientY;
+            this._multiDragStartPositions = [
+              ...this._selPalletRacks.map(i => ({ entity: i, type: 'pallet-rack', sx: i.position.x, sy: i.position.y })),
+              ...this._selZones.map(z => ({ entity: z, type: 'zone', sx: z.position.x, sy: z.position.y })),
+            ];
+            this._zoneDragMoved = false;
+          } else {
+            this._isDragZone = true; this._dragZone = zone;
+            this._zoneDragMoved = false;
+            this._zoneSMX = t.clientX; this._zoneSMY = t.clientY;
+            this._zoneSX = zone.position.x; this._zoneSY = zone.position.y;
+          }
+          // Track for double-tap inspector opening
+          this._editTapEl = zoneEl;
+          this._editTapX  = t.clientX;
+          this._editTapY  = t.clientY;
+          return;
+        }
+
+        // Draw mode: finger on empty warehouse space
+        if (this._drawMode && !e.target.closest('.pallet-rack') && !e.target.closest('.zone')) {
+          const wb = this._wh.getBoundingClientRect();
+          if (t.clientX >= wb.left && t.clientX <= wb.right && t.clientY >= wb.top && t.clientY <= wb.bottom) {
+            e.preventDefault();
+            const fakeE = { clientX: t.clientX, clientY: t.clientY };
+            this._isDrawing = true;
+            const p = this._snapPt(...Object.values(this._relPos(fakeE)));
+            this._startX = p.x; this._startY = p.y;
+            Object.assign(this._prev.style, { left:`${p.x}px`, top:`${p.y}px`, width:'0', height:'0', display:'block' });
+            return;
+          }
+        }
+
+        // Edit mode: rubber-band selection on empty warehouse space
+        if (this._editMode && !e.target.closest('.pallet-rack') && !e.target.closest('.zone')) {
+          const wb = this._wh.getBoundingClientRect();
+          if (t.clientX >= wb.left && t.clientX <= wb.right && t.clientY >= wb.top && t.clientY <= wb.bottom) {
+            e.preventDefault();
+            this._clearAllSelection(); this._closeInspector();
+            this._isRubberBand = true;
+            const fakeE = { clientX: t.clientX, clientY: t.clientY };
+            const rp = this._relPos(fakeE);
+            this._rbStartX = rp.x; this._rbStartY = rp.y;
+            Object.assign(this._prev.style, { left:`${rp.x}px`, top:`${rp.y}px`, width:'0', height:'0', display:'block' });
+            this._prev.classList.add('rubber-band');
+            return;
+          }
+        }
+
+        // Normal mode entity touch: record for double-tap; defer panning until finger moves
+        if (!this._editMode && !this._drawMode &&
+            (e.target.closest('.pallet-rack') || e.target.closest('.zone'))) {
+          e.preventDefault();
+          this._tapStartEl = e.target.closest('.pallet-rack') || e.target.closest('.zone');
+          this._tapStartX  = t.clientX;
+          this._tapStartY  = t.clientY;
+          return; // panning starts in touchmove only if finger actually moves
+        }
+
+        // Default: single-finger pan on empty space
+        this._tapStartEl = null;
+        this._tapStartX  = t.clientX;
+        this._tapStartY  = t.clientY;
+        e.preventDefault();
+        this._isPanning = true;
+        this._panLastX = t.clientX; this._panLastY = t.clientY;
+        this._vp.classList.add('panning');
+      }, { passive: false });
+
+      // ── touchmove ───────────────────────────────────────────────────────────
+      window.addEventListener('touchmove', (e) => {
+        // Pinch-zoom
+        if (this._isPinching && e.touches.length === 2) {
+          e.preventDefault();
+          const t0 = e.touches[0], t1 = e.touches[1];
+          const newDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+          const vr = this._vp.getBoundingClientRect();
+          const newMidX = (t0.clientX + t1.clientX) / 2 - vr.left;
+          const newMidY = (t0.clientY + t1.clientY) / 2 - vr.top;
+          // Translate pan so old midpoint content appears at new midpoint
+          this._panX += newMidX - this._touchPinchMidX;
+          this._panY += newMidY - this._touchPinchMidY;
+          // Scale centered on new midpoint
+          if (this._touchPinchDist > 0) {
+            this._zoomAt(newDist / this._touchPinchDist, newMidX, newMidY);
+          } else {
+            this._applyTransform();
+          }
+          this._touchPinchDist = newDist;
+          this._touchPinchMidX = newMidX;
+          this._touchPinchMidY = newMidY;
+          return;
+        }
+
+        if (e.touches.length === 1) {
+          const t = e.touches[0];
+          // Edit-mode tap: cancel inspector double-tap if finger dragged
+          if (this._editTapEl &&
+              Math.hypot(t.clientX - this._editTapX, t.clientY - this._editTapY) >= 15) {
+            this._editTapEl     = null;
+            this._lastEditTapEl = null;
+          }
+
+          // Normal-mode entity tap pending: convert to pan only once finger moves enough
+          if (this._tapStartEl) {
+            if (Math.hypot(t.clientX - this._tapStartX, t.clientY - this._tapStartY) >= 15) {
+              this._tapStartEl = null;
+              this._lastTapEl  = null; // movement cancels the double-tap chain
+              this._isPanning  = true;
+              this._panLastX   = t.clientX; this._panLastY = t.clientY;
+              this._vp.classList.add('panning');
+              e.preventDefault();
+            }
+            return; // don't forward to _onMouseMove while a tap may still be in progress
+          }
+          const fakeE = { clientX: t.clientX, clientY: t.clientY, button: 0, shiftKey: false, ctrlKey: false, metaKey: false };
+          this._onMouseMove(fakeE);
+          if (this._isPanning || this._isDrawing || this._isEntResize || this._isRotating ||
+              this._isDragPalletRack || this._isDragZone || this._isDragMulti || this._isRubberBand) {
+            e.preventDefault();
+          }
+        }
+      }, { passive: false });
+
+      // ── touchend / touchcancel ───────────────────────────────────────────────
+      const endTouch = (e) => {
+        if (this._isPinching) {
+          this._isPinching = false;
+          this._tapStartEl = null;
+          // If one finger remains, transition to pan
+          if (e.touches.length === 1) {
+            const t = e.touches[0];
+            this._isPanning = true;
+            this._panLastX = t.clientX; this._panLastY = t.clientY;
+          }
+          return;
+        }
+
+        if (e.touches.length === 0) {
+          if (this._isPanning) { this._isPanning = false; this._vp.classList.remove('panning'); }
+          const ct = e.changedTouches[0];
+          if (ct) {
+            const fakeE = { clientX: ct.clientX, clientY: ct.clientY, button: 0, shiftKey: false, ctrlKey: false, metaKey: false };
+
+            // Edit-mode double-tap: open inspector on second tap, drag cleanup always runs
+            if (this._editTapEl &&
+                Math.hypot(ct.clientX - this._editTapX, ct.clientY - this._editTapY) < 15) {
+              const now = Date.now();
+              const el = this._editTapEl;
+              this._editTapEl = null;
+              if (this._lastEditTapEl === el && now - this._lastEditTapTime < 350) {
+                this._lastEditTapEl = null; this._lastEditTapTime = 0;
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+              } else {
+                this._lastEditTapEl = el; this._lastEditTapTime = now;
+              }
+              this._onMouseUp(fakeE); // always clean up drag state
+              return;
+            }
+            this._editTapEl = null;
+
+            // Normal-mode double-tap entity detection
+            if (this._tapStartEl &&
+                Math.hypot(ct.clientX - this._tapStartX, ct.clientY - this._tapStartY) < 15) {
+              const now = Date.now();
+              const el = this._tapStartEl;
+              this._tapStartEl = null;
+              if (this._lastTapEl === el && now - this._lastTapTime < 350) {
+                // Second tap within 350 ms on the same entity → activate it
+                this._lastTapEl = null; this._lastTapTime = 0;
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+              } else {
+                // First tap — record for possible second tap
+                this._lastTapEl = el; this._lastTapTime = now;
+              }
+              return;
+            }
+            // Non-entity tap or significant movement: reset double-tap chain
+            this._tapStartEl = null;
+            this._lastTapEl  = null;
+            this._onMouseUp(fakeE);
+          }
+        }
+      };
+      window.addEventListener('touchend',    endTouch, { passive: false });
+      window.addEventListener('touchcancel', endTouch, { passive: false });
     },
 
     // ── Auth ─────────────────────────────────────────────────────────────────
@@ -556,6 +907,7 @@ const _vueApp = createApp({
         if (layoutResp.status === 401) { window.location.href = '/login'; return; }
         const layoutData = await layoutResp.json();
         const items      = await itemsResp.json();
+        this._pollSeq = layoutData._seq ?? 0;
 
         if (layoutData.warehouses && layoutData.warehouses.length > 0) {
           this._mergeItems(layoutData, items);
@@ -640,11 +992,12 @@ const _vueApp = createApp({
         })),
       };
       try {
-        await fetch('/api/layout', {
+        const resp = await fetch('/api/layout', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data }),
         });
+        if (resp.ok) this._syncPollSeq(await resp.json());
       } catch (err) {
         console.error('Save layout failed:', err);
         _sendVueError(err?.message || String(err), 'saveLayout', err?.stack || '', 'warehouse.js:_saveLayout');
@@ -660,6 +1013,7 @@ const _vueApp = createApp({
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const result = await resp.json();
+        this._syncPollSeq(result);
         return result.id;
       } catch (err) {
         console.error('Add item to DB failed:', err);
@@ -672,6 +1026,7 @@ const _vueApp = createApp({
       try {
         const resp = await fetch(`/api/items/${dbId}`, { method: 'DELETE' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        this._syncPollSeq(await resp.json());
       } catch (err) {
         console.error('Delete item failed:', err);
         _sendVueError(err?.message || String(err), `removeItemFromDB: id=${dbId}`, err?.stack || '', 'warehouse.js:_removeItemFromDB');
@@ -841,6 +1196,26 @@ const _vueApp = createApp({
       this._panY = Math.round(this._panY + (vpRect.top  + vpRect.height / 2) - (elRect.top  + elRect.height / 2));
       this._applyTransform();
     },
+    // Like _panToElement but also zooms in so the element's height fills ≥50% of the viewport.
+    _zoomPanToElement(el) {
+      const elRect = el.getBoundingClientRect();
+      const vpRect = this._vp.getBoundingClientRect();
+      // Logical (canvas-space) height of the element at current zoom
+      const logicalH = elRect.height / this._currentZoom;
+      // Zoom needed so element height = 25% of viewport height
+      const minZoom = (vpRect.height * 0.25) / logicalH;
+      // Only zoom in, never zoom out; cap at 5× to avoid extreme close-ups
+      const newZoom = Math.min(Math.max(this._currentZoom, minZoom), 5);
+      // Element's centre in canvas coordinates (zoom-independent)
+      const elCX = (elRect.left + elRect.width  / 2 - vpRect.left - this._panX) / this._currentZoom;
+      const elCY = (elRect.top  + elRect.height / 2 - vpRect.top  - this._panY) / this._currentZoom;
+      // Recalculate pan so element centre lands at viewport centre under new zoom
+      this._panX = Math.round(vpRect.width  / 2 - elCX * newZoom);
+      this._panY = Math.round(vpRect.height / 2 - elCY * newZoom);
+      this._currentZoom = newZoom;
+      this._applyTransform();
+      this.zoomText = `${Math.round(newZoom * 100)}%`;
+    },
 
     _resetView() {
       this.resetView();
@@ -894,7 +1269,7 @@ const _vueApp = createApp({
             if (target.navJump && entity) {
               this._jumpToElement(el, entity.position.x, entity.position.y, entity.dimensions.width, entity.dimensions.height);
             } else {
-              this._panToElement(el);
+              this._zoomPanToElement(el);
             }
             this._scheduleHighlightClear();
           }
@@ -972,6 +1347,7 @@ const _vueApp = createApp({
       this.showDelEntBtn = false;
       this.statusText = 'Click "Add Pallet Rack" then draw inside the warehouse.';
       this._removeAllHandles();
+      this._checkPollPending();
     },
 
     _selectPalletRack(palletRack) {
@@ -1060,6 +1436,7 @@ const _vueApp = createApp({
       this._wh.classList.remove('drawing-mode');
       this._prev.style.display = 'none';
       this.statusText = 'Click "Add Pallet Rack" then draw inside the warehouse.';
+      this._checkPollPending();
     },
 
     // ── Mouse events ─────────────────────────────────────────────────────────
@@ -1204,7 +1581,10 @@ const _vueApp = createApp({
     },
 
     _onKeyDown(e) {
-      if (e.key === 'Escape') { this._cancelDrawMode(); this._cancelEditMode(); return; }
+      if (e.key === 'Escape') {
+        if (this.relocateMode) { this.cancelRelocate(); return; }
+        this._cancelDrawMode(); this._cancelEditMode(); return;
+      }
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
@@ -1305,6 +1685,15 @@ const _vueApp = createApp({
       zone.element.addEventListener('click', (e) => {
         if (this._editMode) {
           if (!this._zoneDragMoved) this._openInspector(zone, 'zone');
+          return;
+        }
+        if (this.relocateMode) {
+          e.stopPropagation();
+          if (zone.itemFree) {
+            this._log(`Zone "${zone.label}" does not accept items — choose a different destination.`, 'warn');
+            return;
+          }
+          this._executeRelocateToZone(zone);
           return;
         }
         if (zone.itemFree) return;
@@ -1554,6 +1943,11 @@ const _vueApp = createApp({
     },
 
     selectShelfFromList(shelf) {
+      if (this.relocateMode) {
+        this.m_shelfSel = false;
+        this._executeRelocateToShelf(shelf);
+        return;
+      }
       this._ash = shelf;
       this.m_shelfSel = false;
       const subLabel = this._asub.name || `Sub ${this._asub.number}`;
@@ -1682,7 +2076,7 @@ const _vueApp = createApp({
       this.mc_addItemSub = `${this._ai.label} › Sub ${this._asub.number} › ${this._ash.label}`;
       this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = '';
       this.f_itemNotes = ''; this.f_itemTags = ''; this.f_itemUrl = '';
-      this.itemIdError = false;
+      this.itemIdError = false; this.addItemLocErr = '';
       this.m_addItem = true;
       this.$nextTick(() => this.$refs.itemIdInput?.focus());
     },
@@ -1700,17 +2094,34 @@ const _vueApp = createApp({
     },
 
     async confirmAddItem() {
-      const itemId = this.f_itemId.trim();
-      if (!itemId) { this.itemIdError = true; return; }
+      const itemId = this.f_itemId.trim().replace(/^0+(?=.)/, '').toUpperCase();
+      if (!itemId || itemId.length < 3) { this.itemIdError = true; return; }
       this.itemIdError = false;
       const now = new Date().toISOString();
+
+      // Guard: ensure the destination still exists (may have been deleted by another user)
+      if (this._azfi) {
+        if (!this._zones.find(z => z.id === this._azfi.id)) {
+          this.addItemLocErr = `Zone "${this._azfi.label}" has been deleted. Please close and choose another location.`;
+          return;
+        }
+      } else {
+        const prExists  = this._ai   && this._palletRacks.find(p => p.id === this._ai.id);
+        const subExists = prExists   && this._asub && prExists.subsections.find(s => s.id === this._asub.id);
+        const shExists  = subExists  && this._ash  && subExists.shelves.find(s => s.id === this._ash.id);
+        if (!shExists) {
+          this.addItemLocErr = `Shelf "${this._ash?.label ?? ''}" has been deleted. Please close and choose another location.`;
+          return;
+        }
+      }
+      this.addItemLocErr = '';
 
       if (this._azfi) {
         // Zone item
         const payload = {
-          item_id: itemId, item_type: this.f_itemType.trim(),
-          category: this.f_itemCategory.trim(), notes: this.f_itemNotes.trim(),
-          url: this.f_itemUrl.trim(), tags: this.f_itemTags.trim(),
+          item_id: itemId, item_type: this.f_itemType.trim().toUpperCase(),
+          category: this.f_itemCategory.trim().toUpperCase(), notes: this.f_itemNotes.trim(),
+          url: this.f_itemUrl.trim(), tags: this.f_itemTags.trim().toUpperCase(),
           added_at: now, location_type: 'zone',
           warehouse_id: this._warehouses[this._activeWhIdx]?.id,
           warehouse_name: this._warehouses[this._activeWhIdx]?.name || '',
@@ -1727,9 +2138,9 @@ const _vueApp = createApp({
         // Shelf item
         const wh = this._warehouses[this._activeWhIdx];
         const payload = {
-          item_id: itemId, item_type: this.f_itemType.trim(),
-          category: this.f_itemCategory.trim(), notes: this.f_itemNotes.trim(),
-          url: this.f_itemUrl.trim(), tags: this.f_itemTags.trim(),
+          item_id: itemId, item_type: this.f_itemType.trim().toUpperCase(),
+          category: this.f_itemCategory.trim().toUpperCase(), notes: this.f_itemNotes.trim(),
+          url: this.f_itemUrl.trim(), tags: this.f_itemTags.trim().toUpperCase(),
           added_at: now, location_type: 'shelf',
           warehouse_id: wh?.id, warehouse_name: wh?.name || '',
           pallet_rack_id: this._ai.id, pallet_rack_label: this._ai.label, pallet_rack_row: this._ai.row || '',
@@ -1759,6 +2170,14 @@ const _vueApp = createApp({
       this.$nextTick(() => this.$refs.bulkAddInput?.focus());
     },
 
+    openZoneBulkAdd() {
+      this.m_zoneAct = false;
+      this.f_zoneBulkText = '';
+      this.zoneBulkAddError = '';
+      this.m_zoneBulkAdd = true;
+      this.$nextTick(() => this.$refs.zoneBulkAddInput?.focus());
+    },
+
     openViewItems() {
       this.m_shelfAct = false;
       this.mc_itemList = this._ash.items;
@@ -1766,39 +2185,239 @@ const _vueApp = createApp({
     },
 
     openItemDetail(item) {
-      this._activeItemShelf = this._ash;
+      this._activeItemShelf      = this._ash;
+      this._activeItemDetailZone = null;
       this.mc_activeItem = item;
       this.m_itemDetail  = true;
     },
 
     openItemDetailFromSearch(item, shelf) {
-      this._activeItemShelf = shelf;
+      this._activeItemShelf      = shelf;
+      this._activeItemDetailZone = null;
       this.mc_activeItem = item;
       this.m_itemDetail  = true;
     },
 
-    async deleteViewItem() {
+    openItemDetailFromZone(item) {
+      this._activeItemShelf      = null;
+      this._activeItemDetailZone = this._azfi;
+      this.mc_activeItem = item;
+      this.m_itemDetail  = true;
+    },
+
+    deleteViewItem() {
+      const item = this.mc_activeItem;
+      if (!item) return;
+      this.mc_confDelItemMsg = `Permanently delete item "${item.itemId}"? This cannot be undone.`;
+      this.m_confDelItem = true;
+    },
+
+    async confirmDeleteViewItem() {
+      this.m_confDelItem = false;
       const item  = this.mc_activeItem;
       const shelf = this._activeItemShelf;
-      if (!item || !shelf) return;
+      const zone  = this._activeItemDetailZone;
+      if (!item || (!shelf && !zone)) return;
       await this._removeItemFromDB(item.id);
-      shelf.items = shelf.items.filter(i => i.id !== item.id);
-      this.mc_itemList   = shelf.items;
+      if (shelf) {
+        shelf.items = shelf.items.filter(i => i.id !== item.id);
+        this.mc_itemList = shelf.items;
+        if (this._ash === shelf)
+          this.mc_shelfActSub = `${shelf.items.length} item${shelf.items.length !== 1 ? 's' : ''} on this shelf`;
+      } else {
+        zone.items = zone.items.filter(i => i.id !== item.id);
+        this.mc_zoneItemList = zone.items;
+      }
       this.mc_activeItem = null;
       this.m_itemDetail  = false;
-      if (this._ash === shelf)
-        this.mc_shelfActSub = `${shelf.items.length} item${shelf.items.length !== 1 ? 's' : ''} on this shelf`;
+    },
+
+    // ── Edit item details ─────────────────────────────────────────────────────
+
+    openEditItem() {
+      const item = this.mc_activeItem;
+      if (!item) return;
+      this.f_editItemId       = item.itemId   || '';
+      this.f_editItemType     = item.type     || '';
+      this.f_editItemCategory = item.category || '';
+      this.f_editItemTags     = item.tags     || '';
+      this.f_editItemUrl      = item.url      || '';
+      this.f_editItemNotes    = item.notes    || '';
+      this.editItemError      = '';
+      this.m_itemDetail       = false;
+      this.m_editItem         = true;
+    },
+
+    closeEditItem() {
+      this.m_editItem   = false;
+      this.m_itemDetail = true;
+    },
+
+    async saveEditItem() {
+      const item = this.mc_activeItem;
+      if (!item) return;
+      const itemId = this.f_editItemId.trim().replace(/^0+(?=.)/, '').toUpperCase();
+      if (!itemId || itemId.length < 3) { this.editItemError = 'Item ID must be at least 3 characters.'; return; }
+      this.editItemError = '';
+      try {
+        const resp = await fetch(`/api/items/${item.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_id:   itemId,
+            item_type: this.f_editItemType.trim().toUpperCase(),
+            category:  this.f_editItemCategory.trim().toUpperCase(),
+            tags:      this.f_editItemTags.trim().toUpperCase(),
+            url:       this.f_editItemUrl.trim(),
+            notes:     this.f_editItemNotes.trim(),
+          }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        this._syncPollSeq(await resp.json());
+        item.itemId   = itemId;
+        item.type     = this.f_editItemType.trim().toUpperCase();
+        item.category = this.f_editItemCategory.trim().toUpperCase();
+        item.tags     = this.f_editItemTags.trim().toUpperCase();
+        item.url      = this.f_editItemUrl.trim();
+        item.notes    = this.f_editItemNotes.trim();
+        this.m_editItem   = false;
+        this.m_itemDetail = true;
+      } catch (err) {
+        this.editItemError = 'Save failed. Please try again.';
+        _sendVueError(err?.message || String(err), `saveEditItem: id=${item.id}`, err?.stack || '', 'warehouse.js:saveEditItem');
+      }
+    },
+
+    // ── Relocate item (Move button in item detail) ────────────────────────────
+
+    startRelocateItem() {
+      const item = this.mc_activeItem;
+      if (!item) return;
+      this._relocateItem     = item;
+      this._relocateSrcShelf = this._activeItemShelf || null;
+      this._relocateSrcZone  = this._activeItemDetailZone || null;
+      this._relocateSrcWhIdx = this._activeWhIdx;
+      this.mc_activeItem     = null;
+      this.m_itemDetail      = false;
+      this.relocateMode      = true;
+      const src = this._relocateSrcZone
+        ? `Zone "${this._relocateSrcZone.label}"`
+        : this._relocateSrcShelf
+          ? `${this._ai?.label ?? '?'} › ${this._asub ? (this._asub.name || `Sub ${this._asub.number}`) : '?'} › ${this._relocateSrcShelf.label}`
+          : 'current location';
+      this._log(`Moving "${item.itemId}" from ${src} — click a zone or pallet rack to pick destination. (ESC to cancel)`, 'info');
+    },
+
+    cancelRelocate() {
+      this._relocateItem     = null;
+      this._relocateSrcShelf = null;
+      this._relocateSrcZone  = null;
+      this._relocateSrcWhIdx = -1;
+      this.relocateMode      = false;
+      this._log('Move cancelled.', 'warn');
+    },
+
+    async _executeRelocateToShelf(shelf) {
+      const item = this._relocateItem;
+      if (!item) return;
+      const wh = this._warehouses[this._activeWhIdx];
+      await this._moveItemToDB(item.id, {
+        location_type:     'shelf',
+        warehouse_id:      wh?.id ?? null,
+        warehouse_name:    wh?.name ?? '',
+        pallet_rack_id:    this._ai.id,
+        pallet_rack_label: this._ai.label,
+        pallet_rack_row:   this._ai.row || '',
+        subsection_id:     this._asub.id,
+        subsection_number: this._asub.number,
+        subsection_name:   this._asub.name || '',
+        shelf_id:          shelf.id,
+        shelf_label:       shelf.label,
+        zone_id:           null,
+        zone_label:        '',
+      });
+      this._applyRelocateSourceRemoval(item);
+      shelf.items.push({ ...item, palletRackId: this._ai.id, subsectionId: this._asub.id, shelfId: shelf.id, zoneId: null, zoneLabel: '' });
+      const subLabel = this._asub.name || `Sub ${this._asub.number}`;
+      this._log(`Moved "${item.itemId}" → ${this._ai.label} › ${subLabel} › ${shelf.label}`, 'success');
+      this._finishRelocate();
+    },
+
+    async _executeRelocateToZone(zone) {
+      const item = this._relocateItem;
+      if (!item) return;
+      const wh = this._warehouses[this._activeWhIdx];
+      await this._moveItemToDB(item.id, {
+        location_type:     'zone',
+        warehouse_id:      wh?.id ?? null,
+        warehouse_name:    wh?.name ?? '',
+        pallet_rack_id:    null,
+        pallet_rack_label: '',
+        pallet_rack_row:   '',
+        subsection_id:     null,
+        subsection_number: null,
+        subsection_name:   '',
+        shelf_id:          null,
+        shelf_label:       '',
+        zone_id:           zone.id,
+        zone_label:        zone.label,
+      });
+      this._applyRelocateSourceRemoval(item);
+      zone.items.push({ ...item, zoneId: zone.id, zoneLabel: zone.label, palletRackId: null, subsectionId: null, shelfId: null });
+      this._log(`Moved "${item.itemId}" → Zone "${zone.label}"`, 'success');
+      this._finishRelocate();
+    },
+
+    _applyRelocateSourceRemoval(item) {
+      if (this._relocateSrcShelf) {
+        this._relocateSrcShelf.items = this._relocateSrcShelf.items.filter(i => i.id !== item.id);
+      } else if (this._relocateSrcZone) {
+        this._relocateSrcZone.items = this._relocateSrcZone.items.filter(i => i.id !== item.id);
+      }
+      // Cross-warehouse: update the serialized snapshot of the source warehouse so
+      // switching back to it doesn't resurrect the item from stale serialized data.
+      if (this._relocateSrcWhIdx !== this._activeWhIdx) {
+        const srcWh = this._warehouses[this._relocateSrcWhIdx];
+        if (srcWh && this._relocateSrcShelf) {
+          for (const pr of srcWh.palletRacks || [])
+            for (const sub of pr.subsections || [])
+              for (const sh of sub.shelves || [])
+                if (sh.id === this._relocateSrcShelf.id)
+                  sh.items = sh.items.filter(i => i.id !== item.id);
+        } else if (srcWh && this._relocateSrcZone) {
+          const z = (srcWh.zones || []).find(z => z.id === this._relocateSrcZone.id);
+          if (z) z.items = z.items.filter(i => i.id !== item.id);
+        }
+      }
+    },
+
+    _finishRelocate() {
+      this._relocateItem     = null;
+      this._relocateSrcShelf = null;
+      this._relocateSrcZone  = null;
+      this._relocateSrcWhIdx = -1;
+      this.relocateMode      = false;
+      this.closeAllModals();
     },
 
     async confirmBulkAdd() {
+      // Guard: ensure the shelf still exists before bulk-adding
+      const prExists  = this._ai   && this._palletRacks.find(p => p.id === this._ai.id);
+      const subExists = prExists   && this._asub && prExists.subsections.find(s => s.id === this._asub.id);
+      const shExists  = subExists  && this._ash  && subExists.shelves.find(s => s.id === this._ash.id);
+      if (!shExists) {
+        this.bulkAddError = `Shelf "${this._ash?.label ?? ''}" has been deleted. Please close and choose another location.`;
+        return;
+      }
       const lines = this.f_bulkText.split('\n').map(l => l.trim()).filter(Boolean);
       if (!lines.length) { this.bulkAddError = 'No items entered.'; return; }
       const parsed = [];
       const errors = [];
       for (let i = 0; i < lines.length; i++) {
         const parts = lines[i].split(';');
-        const itemId = (parts[0] || '').trim();
+        const itemId = (parts[0] || '').trim().replace(/^0+(?=.)/, '').toUpperCase();
         if (!itemId) { errors.push(`Line ${i + 1}: Item ID is required.`); continue; }
+        if (itemId.length < 3) { errors.push(`Line ${i + 1}: Item ID must be at least 3 characters.`); continue; }
         parsed.push({
           item_id:   itemId,
           item_type: (parts[1] || '').trim(),
@@ -1831,6 +2450,52 @@ const _vueApp = createApp({
       this.m_bulkAdd = false;
       this.statusText = `Added ${parsed.length} item(s) to ${this._ash.label}.`;
       this.selectShelfFromList(this._ash);
+    },
+
+    async confirmZoneBulkAdd() {
+      // Guard: ensure the zone still exists
+      if (!this._azfi || !this._zones.find(z => z.id === this._azfi.id)) {
+        this.zoneBulkAddError = `Zone "${this._azfi?.label ?? ''}" has been deleted. Please close and choose another location.`;
+        return;
+      }
+      const lines = this.f_zoneBulkText.split('\n').map(l => l.trim()).filter(Boolean);
+      if (!lines.length) { this.zoneBulkAddError = 'No items entered.'; return; }
+      const parsed = [];
+      const errors = [];
+      for (let i = 0; i < lines.length; i++) {
+        const parts = lines[i].split(';');
+        const itemId = (parts[0] || '').trim().replace(/^0+(?=.)/, '').toUpperCase();
+        if (!itemId) { errors.push(`Line ${i + 1}: Item ID is required.`); continue; }
+        if (itemId.length < 3) { errors.push(`Line ${i + 1}: Item ID must be at least 3 characters.`); continue; }
+        parsed.push({
+          item_id:   itemId,
+          item_type: (parts[1] || '').trim(),
+          category:  (parts[2] || '').trim(),
+          tags:      (parts[3] || '').trim(),
+          url:       (parts[4] || '').trim(),
+          notes:     (parts[5] || '').trim(),
+        });
+      }
+      if (errors.length) { this.zoneBulkAddError = errors.join('\n'); return; }
+      const now = new Date().toISOString();
+      const wh  = this._warehouses[this._activeWhIdx];
+      for (const item of parsed) {
+        const payload = {
+          ...item,
+          added_at: now, location_type: 'zone',
+          warehouse_id: wh?.id, warehouse_name: wh?.name || '',
+          zone_id: this._azfi.id, zone_label: this._azfi.label,
+        };
+        const dbId = await this._addItemToDB(payload);
+        this._azfi.items.push({
+          id: dbId, itemId: item.item_id, type: item.item_type, category: item.category,
+          tags: item.tags || '', url: item.url || '',
+          notes: item.notes, addedAt: now, zoneId: this._azfi.id,
+        });
+      }
+      this.m_zoneBulkAdd = false;
+      this.statusText = `Added ${parsed.length} item(s) to zone "${this._azfi.label}".`;
+      this._openZoneActions(this._azfi);
     },
 
     // ── Remove items ──────────────────────────────────────────────────────────
@@ -1940,11 +2605,223 @@ const _vueApp = createApp({
     },
 
     async _moveItemToDB(itemDbId, locationData) {
-      await fetch(`/api/items/${itemDbId}/location`, {
+      const resp = await fetch(`/api/items/${itemDbId}/location`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(locationData),
       });
+      if (resp.ok) this._syncPollSeq(await resp.json());
+    },
+
+    // ── Live polling ──────────────────────────────────────────────────────────
+
+    _startLayoutPoll() {
+      if (this._pollTimer) clearInterval(this._pollTimer);
+      this._pollTimer = setInterval(() => this._pollLayoutVersion(), 5000);
+    },
+
+    _startPing() {
+      if (this._pingTimer) clearInterval(this._pingTimer);
+      this._pingTimer = setInterval(() => this._doPing(), 5000);
+    },
+
+    async _doPing() {
+      try {
+        const ctrl    = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 5000);
+        const resp    = await fetch('/api/ping', { signal: ctrl.signal });
+        clearTimeout(timeout);
+        if (resp.ok) {
+          if (this.isOffline) {
+            this.isOffline      = false;
+            this.m_offlineModal = false;
+            this._offlineSince  = null;
+            this._log('Connection to server restored.', 'success');
+          } else {
+            this._offlineSince = null;
+          }
+        } else {
+          this._handlePingFailure();
+        }
+      } catch (_) {
+        this._handlePingFailure();
+      }
+    },
+
+    _handlePingFailure() {
+      const now = Date.now();
+      if (this._offlineSince === null) {
+        this._offlineSince = now;
+      } else if (!this.isOffline && (now - this._offlineSince) >= 15000) {
+        this.isOffline      = true;
+        this.m_offlineModal = true;
+        this._log('Connection to server lost.', 'error');
+      }
+    },
+
+    async _pollLayoutVersion() {
+      try {
+        const resp = await fetch('/api/layout-version');
+        if (!resp.ok) return;
+        const { seq } = await resp.json();
+        if (seq !== this._pollSeq) this._reloadIfIdle(seq);
+      } catch (_) {}
+    },
+
+    _syncPollSeq(json) {
+      if (json && json.seq != null) this._pollSeq = json.seq;
+    },
+
+    _isUserBusy() {
+      // Only block reloads when the user is actively creating/modifying/deleting.
+      // Read-only viewing modals (shelfAct, viewItems, addItem, subSel, shelfSel,
+      // zoneAct, zoneItems) are transparent to silent reloads — _reAnchorModalRefs
+      // refreshes their data after each reload.
+      return !!(
+        this._editMode || this._drawMode || this.relocateMode ||
+        this.m_rmItems || this.m_bulkAdd || this.m_zoneBulkAdd ||
+        this.m_itemDetail || this.m_moveDest ||
+        this.m_count || this.m_subs || this.m_labels ||
+        this.m_addShelf || this.m_confDel || this.m_confDelSub ||
+        this.m_zone || this.m_pastePalletRack || this.m_pasteZone ||
+        this.m_delEnt
+      );
+    },
+
+    _reloadIfIdle(seq) {
+      if (this._isUserBusy()) {
+        this._pollPending = seq;
+      } else {
+        this._pollPending = 0;
+        this._reloadSilently(seq);
+      }
+    },
+
+    _checkPollPending() {
+      if (this._pollPending && !this._isUserBusy()) {
+        const seq = this._pollPending;
+        this._pollPending = 0;
+        this._reloadSilently(seq);
+      }
+    },
+
+    async _reloadSilently(seq) {
+      try {
+        const [layoutResp, itemsResp] = await Promise.all([
+          fetch('/api/layout'),
+          fetch('/api/items'),
+        ]);
+        if (!layoutResp.ok || !itemsResp.ok) return;
+        const layoutData = await layoutResp.json();
+        const items      = await itemsResp.json();
+
+        // Preserve the user's current pan/zoom and active warehouse tab
+        const savedPanX = this._panX;
+        const savedPanY = this._panY;
+        const savedZoom = this._currentZoom;
+        layoutData.activeWarehouseIdx = this._activeWhIdx;
+
+        this._silentImport = true;
+        if (layoutData.warehouses && layoutData.warehouses.length > 0) {
+          this._mergeItems(layoutData, items);
+          this._importAllWarehouses(layoutData);
+        }
+        this._silentImport = false;
+
+        // Restore pan/zoom
+        this._panX = savedPanX;
+        this._panY = savedPanY;
+        this._currentZoom = savedZoom;
+        if (this._pzl) {
+          this._pzl.style.transform =
+            `translate(${savedPanX}px,${savedPanY}px) scale(${savedZoom})`;
+        }
+
+        // Re-point open modal references to freshly loaded objects
+        this._reAnchorModalRefs();
+
+        // Update seq baseline so next poll doesn't re-trigger
+        this._pollSeq = layoutData._seq ?? seq;
+      } catch (_) {}
+    },
+
+    _reAnchorModalRefs() {
+      // Re-anchor _ai / _asub / _ash to newly loaded pallet rack objects
+      if (this._ai) {
+        const newPR = this._palletRacks.find(p => p.id === this._ai.id);
+        if (!newPR) {
+          // Pallet rack deleted by another user — close related modals
+          this._ai = null; this._asub = null; this._ash = null;
+          this.closeAllModals();
+          return;
+        }
+        this._ai = newPR;
+
+        if (this.m_subSel) {
+          this.mc_subSelList = newPR.subsections.map(sub => ({
+            id: sub.id, label: sub.name || `Sub ${sub.number}`,
+            shelfCount: sub.shelves.length,
+          }));
+        }
+
+        if (this._asub) {
+          const newSub = newPR.subsections.find(s => s.id === this._asub.id);
+          if (!newSub) {
+            this._asub = null; this._ash = null;
+            if (this.m_addItem) {
+              this.addItemLocErr = 'The subsection containing this shelf has been deleted. Please close and choose another location.';
+            } else if (this.m_shelfAct || this.m_viewItems || this.m_shelfSel || this.m_rmItems) {
+              this.closeAllModals();
+            }
+            return;
+          }
+          this._asub = newSub;
+
+          if (this.m_shelfSel) this.mc_shelfSelList = newSub.shelves;
+
+          if (this._ash) {
+            const newShelf = newSub.shelves.find(s => s.id === this._ash.id);
+            if (!newShelf) {
+              this._ash = null;
+              if (this.m_addItem) {
+                this.addItemLocErr = `Shelf has been deleted. Please close and choose another location.`;
+              } else if (this.m_shelfAct || this.m_viewItems || this.m_rmItems) {
+                this.closeAllModals();
+              }
+              return;
+            }
+            this._ash = newShelf;
+
+            if (this.m_shelfAct) {
+              this.mc_shelfActSub = `${newShelf.items.length} item${newShelf.items.length !== 1 ? 's' : ''} on this shelf`;
+            }
+            if (this.m_viewItems || this.m_rmItems) {
+              this.mc_itemList = newShelf.items;
+            }
+          }
+        }
+      }
+
+      // Re-anchor _azfi to newly loaded zone object
+      if (this._azfi) {
+        const newZone = this._zones.find(z => z.id === this._azfi.id);
+        if (!newZone) {
+          this._azfi = null;
+          if (this.m_addItem) {
+            this.addItemLocErr = `Zone "${this._azfi?.label ?? ''}" has been deleted. Please close and choose another location.`;
+          } else if (this.m_zoneAct || this.m_zoneItems) {
+            this.closeAllModals();
+          }
+          return;
+        }
+        this._azfi = newZone;
+
+        if (this.m_zoneAct) {
+          const n = newZone.items.length;
+          this.mc_zoneActSub = `${n} item${n !== 1 ? 's' : ''} in this zone`;
+        }
+        if (this.m_zoneItems) this.mc_zoneItemList = newZone.items;
+      }
     },
 
     // ── Zone actions / items ──────────────────────────────────────────────────
@@ -1962,7 +2839,7 @@ const _vueApp = createApp({
       this.mc_addItemSub = `Zone: ${this._azfi.label}`;
       this.f_itemId = ''; this.f_itemType = ''; this.f_itemCategory = '';
       this.f_itemNotes = ''; this.f_itemTags = ''; this.f_itemUrl = '';
-      this.itemIdError = false;
+      this.itemIdError = false; this.addItemLocErr = '';
       this.m_addItem = true;
       this.$nextTick(() => this.$refs.itemIdInput?.focus());
     },
@@ -2390,14 +3267,15 @@ const _vueApp = createApp({
 
     closeAllModals() {
       this.m_count = this.m_subs = this.m_labels = this.m_subSel = this.m_shelfSel = false;
-      this.m_addShelf = this.m_shelfAct = this.m_addItem = this.m_bulkAdd = this.m_viewItems = this.m_itemDetail = this.m_rmItems = this.m_confDel = this.m_confDelSub = false;
-      this.m_zone = this.m_pastePalletRack = this.m_pasteZone = this.m_delEnt = this.m_zoneAct = this.m_zoneItems = false;
+      this.m_addShelf = this.m_shelfAct = this.m_addItem = this.m_bulkAdd = this.m_viewItems = this.m_itemDetail = this.m_editItem = this.m_rmItems = this.m_confDel = this.m_confDelSub = false;
+      this.m_zone = this.m_pastePalletRack = this.m_pasteZone = this.m_delEnt = this.m_zoneAct = this.m_zoneItems = this.m_zoneBulkAdd = false;
       this.m_moveDest = false;
       this._ai = null; this._asub = null; this._ash = null; this._azfi = null;
       this._selItemIds.clear(); this._selZoneItemIds.clear();
       this._itemsToMove = [];
       this.mc_selItemIds = []; this.mc_selZoneItemIds = [];
       this.mc_selCount = 0; this.mc_zoneSelCount = 0;
+      this._checkPollPending();
     },
 
     // ── Search ────────────────────────────────────────────────────────────────
@@ -2407,7 +3285,7 @@ const _vueApp = createApp({
     },
 
     runSearch() {
-      const query = this.searchQuery.trim();
+      const query = this.searchQuery.trim().replace(/^0+(?=.)/, '');
       if (!query) return;
       this._clearHighlights();
       const q = query.toLowerCase();
@@ -2541,6 +3419,8 @@ const _vueApp = createApp({
       } else {
         this._log(`Found ${results.length} item${results.length !== 1 ? 's' : ''} matching "${query}"`, 'success');
         results.forEach(r => this._log(r.locationText, 'success'));
+        // Single result: jump to it automatically.
+        if (results.length === 1) this.scrollToResult(results[0]);
       }
     },
 
@@ -2553,9 +3433,9 @@ const _vueApp = createApp({
         this.switchTab(result.warehouseIdx);
         return;
       }
-      // Same warehouse — pan immediately.
+      // Same warehouse — pan immediately and zoom so the target fills ≥50% of viewport height.
       const el = result.scrollTarget;
-      if (el) this._panToElement(el);
+      if (el) this._zoomPanToElement(el);
       // Restart pulsing on the specific element the user clicked.
       const pulseEl = result.shelf?.element ?? (result.zoneId !== undefined ? result.scrollTarget : null);
       const pulseClass  = result.shelf?.element ? 'shelf-highlight'  : 'zone-highlight';
@@ -2622,28 +3502,23 @@ const _vueApp = createApp({
 
     _refreshNavLists() {
       const allPRs = [], allZones = [];
-      const multiWh = this._warehouses.length > 1;
-      for (let whIdx = 0; whIdx < this._warehouses.length; whIdx++) {
-        const wh      = this._warehouses[whIdx];
-        const isActive = whIdx === this._activeWhIdx;
-        const whLabel  = multiWh ? (wh.name || `Warehouse ${whIdx + 1}`) : '';
-        // Active warehouse: use live arrays; others: use serialized data stored on _warehouses
-        const prs   = isActive ? this._palletRacks : (wh.palletRacks || []);
-        const zones = isActive ? this._zones       : (wh.zones || []);
-        for (const pr of prs) {
-          allPRs.push({
-            id: pr.id, label: pr.label || '', row: pr.row || '',
-            whLabel, warehouseIdx: whIdx,
-            position: { ...pr.position }, dimensions: { ...pr.dimensions },
-          });
-        }
-        for (const zone of zones) {
-          allZones.push({
-            id: zone.id, label: zone.label || '',
-            whLabel, warehouseIdx: whIdx,
-            position: { ...zone.position }, dimensions: { ...zone.dimensions },
-          });
-        }
+      // Only show entries for the currently active warehouse
+      const prs   = this._palletRacks;
+      const zones = this._zones;
+      for (const pr of prs) {
+        allPRs.push({
+          id: pr.id, label: pr.label || '', row: pr.row || '',
+          whLabel: '', warehouseIdx: this._activeWhIdx,
+          position: { ...pr.position }, dimensions: { ...pr.dimensions },
+        });
+      }
+      for (const zone of zones) {
+        if (zone.itemFree) continue;  // exclude no-item zones
+        allZones.push({
+          id: zone.id, label: zone.label || '',
+          whLabel: '', warehouseIdx: this._activeWhIdx,
+          position: { ...zone.position }, dimensions: { ...zone.dimensions },
+        });
       }
       this.navPalletRacks = allPRs.sort((a, b) => a.label.localeCompare(b.label));
       this.navZones       = allZones.sort((a, b) => a.label.localeCompare(b.label));
@@ -2839,6 +3714,36 @@ const _vueApp = createApp({
       this._syncTabs();
     },
 
+    openReorderTabs() {
+      this.reorderList   = this.tabs.map(t => ({ ...t }));
+      this.reorderSelIdx = -1;
+      this.m_reorderTabs = true;
+    },
+    reorderTabUp() {
+      const i = this.reorderSelIdx;
+      if (i <= 0) return;
+      const item = this.reorderList.splice(i, 1)[0];
+      this.reorderList.splice(i - 1, 0, item);
+      this.reorderSelIdx = i - 1;
+    },
+    reorderTabDown() {
+      const i = this.reorderSelIdx;
+      if (i < 0 || i >= this.reorderList.length - 1) return;
+      const item = this.reorderList.splice(i, 1)[0];
+      this.reorderList.splice(i + 1, 0, item);
+      this.reorderSelIdx = i + 1;
+    },
+    saveReorderTabs() {
+      this.m_reorderTabs = false;
+      this._serializeCurrentWarehouse();
+      const activeWhId = this._warehouses[this._activeWhIdx].id;
+      const idOrder    = this.reorderList.map(t => t.id);
+      this._warehouses.sort((a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id));
+      this._activeWhIdx = this._warehouses.findIndex(wh => wh.id === activeWhId);
+      this._syncTabs();
+      this._saveLayout();
+    },
+
     _loadWarehouseDOM(wh) {
       this._importLayout({
         warehouse:   { width: wh.width || 800, height: wh.height || 500, background: wh.background || null },
@@ -2871,13 +3776,15 @@ const _vueApp = createApp({
       this._activeWhIdx = Math.min(data.activeWarehouseIdx || 0, this._warehouses.length - 1);
       this._loadWarehouseDOM(this._warehouses[this._activeWhIdx]);
       this._syncTabs();
-      this.$nextTick(() => this._resetView());
+      if (!this._silentImport) this.$nextTick(() => this._resetView());
     },
 
     _importLayout(data) {
-      if (this._drawMode) this._cancelDrawMode();
-      if (this._editMode) this._cancelEditMode();
-      this.closeAllModals();
+      if (!this._silentImport) {
+        if (this._drawMode) this._cancelDrawMode();
+        if (this._editMode) this._cancelEditMode();
+        this.closeAllModals();
+      }
 
       this._palletRacks.forEach(i => i.element.remove());
       this._palletRacks.length = 0;
@@ -2905,7 +3812,7 @@ const _vueApp = createApp({
       this._refreshNavLists();
       // Use rAF to defer until after the browser has computed layout,
       // ensuring getBoundingClientRect() on the viewport returns correct dimensions.
-      requestAnimationFrame(() => this._resetView());
+      if (!this._silentImport) requestAnimationFrame(() => this._resetView());
     },
 
     _setWarehouseBgSilent(dataUrl) {

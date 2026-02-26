@@ -19,22 +19,28 @@
 
 <div id="app">
 
-  <!-- ── App Header: search + brand ── -->
+  <!-- ── App Header: brand / nav (row 1) + search (row 2) ── -->
   <header class="app-header">
-    <div class="search-bar">
-      <div class="search-input-wrap">
-        <input type="text" v-model="searchQuery" placeholder="Search by Item ID..." autocomplete="off"
-               @input="onSearchInput" @keydown.enter="runSearch" />
-        <button class="btn-search" @click="runSearch">Search</button>
-        <button class="btn-clear-search" v-show="showSearchResults" @click="clearSearch">Clear</button>
+    <div class="header-row">
+      <div class="brand-name">IndSurp</div>
+      <div class="header-right">
+        <a class="btn-search-page" href="/search" target="_blank">Item Search</a>
+        <div class="user-info">
+          <span class="user-role-badge" :class="userData.role">{{ userData.role }}</span>
+          <span class="user-name">{{ userData.username }}</span>
+          <button class="btn-logout" @click="logout">Sign Out</button>
+        </div>
       </div>
     </div>
-    <div class="brand-name">IndSurp</div>
-    <a class="btn-search-page" href="/search" target="_blank">Item Search</a>
-    <div class="user-info">
-      <span class="user-role-badge" :class="userData.role">{{ userData.role }}</span>
-      <span class="user-name">{{ userData.username }}</span>
-      <button class="btn-logout" @click="logout">Sign Out</button>
+    <div class="header-search-row">
+      <div class="search-bar">
+        <div class="search-input-wrap">
+          <input type="text" v-model="searchQuery" placeholder="Search by Item ID..." autocomplete="off"
+                 @input="onSearchInput" @keydown.enter="runSearch" />
+          <button class="btn-search" @click="runSearch">Search</button>
+          <button class="btn-clear-search" v-show="showSearchResults" @click="clearSearch">Clear</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -43,6 +49,7 @@
     <div class="warehouse-panel">
       <!-- Tab bar -->
       <div class="tab-bar">
+        <button v-if="isAdmin && tabs.length > 1" class="btn-reorder-tabs" title="Reorder warehouses" @click="openReorderTabs">&#x21C5;</button>
         <div v-for="(wh, idx) in tabs" :key="wh.id"
              class="tab" :class="{ active: idx === activeTabIdx }"
              @click="switchTab(idx)" @dblclick.stop="isAdmin && startRenameTab(idx, $event)">
@@ -453,6 +460,7 @@
         <label>Notes</label>
         <textarea v-model="f_itemNotes" placeholder="Any additional notes..."></textarea>
       </div>
+      <p v-if="addItemLocErr" style="color:#e53935;margin:8px 0 0;font-size:13px">{{ addItemLocErr }}</p>
       <div class="modal-actions">
         <button class="btn-cancel" @click="backFromAddItem">← Back</button>
         <button class="btn-confirm" @click="confirmAddItem">Add Item</button>
@@ -514,7 +522,7 @@
   </div>
 
   <!-- ══ Item detail ══ -->
-  <div class="modal-overlay" v-show="m_itemDetail && mc_activeItem">
+  <div class="modal-overlay modal-overlay--top" v-show="m_itemDetail && mc_activeItem">
     <div class="modal" v-if="mc_activeItem">
       <button class="modal-close" @click="m_itemDetail = false" title="Close">&#x2715;</button>
       <p class="modal-title">{{ mc_activeItem.itemId }}</p>
@@ -541,7 +549,62 @@
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" @click="m_itemDetail = false">← Back</button>
+        <button class="btn-confirm" @click="openEditItem">Edit Item</button>
+      </div>
+      <div class="modal-actions" style="margin-top:8px">
+        <button class="btn-move" @click="startRelocateItem">Move Item</button>
         <button class="btn-danger" @click="deleteViewItem">Delete Item</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Edit item ══ -->
+  <div class="modal-overlay modal-overlay--top" v-show="m_editItem">
+    <div class="modal">
+      <button class="modal-close" @click="closeEditItem" title="Close">&#x2715;</button>
+      <p class="modal-title">Edit Item</p>
+      <div class="form-field" style="margin-bottom:10px">
+        <label>Item ID <span style="color:#e53935">*</span></label>
+        <input type="text" v-model="f_editItemId" placeholder="e.g. SKU-001" />
+      </div>
+      <div class="two-col" style="margin-bottom:10px">
+        <div class="form-field">
+          <label>Type</label>
+          <input type="text" v-model="f_editItemType" placeholder="e.g. Electronics" />
+        </div>
+        <div class="form-field">
+          <label>Category</label>
+          <input type="text" v-model="f_editItemCategory" placeholder="e.g. Accessories" />
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:10px">
+        <label>Tags (comma-separated)</label>
+        <input type="text" v-model="f_editItemTags" placeholder="e.g. fragile, urgent" />
+      </div>
+      <div class="form-field" style="margin-bottom:10px">
+        <label>URL</label>
+        <input type="text" v-model="f_editItemUrl" placeholder="https://…" />
+      </div>
+      <div class="form-field" style="margin-bottom:10px">
+        <label>Notes</label>
+        <textarea v-model="f_editItemNotes" placeholder="Any notes…"></textarea>
+      </div>
+      <p v-if="editItemError" style="color:#ef4444;font-size:12px;margin:0 0 8px">{{ editItemError }}</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="closeEditItem">← Back</button>
+        <button class="btn-confirm" @click="saveEditItem">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Confirm delete item ══ -->
+  <div class="modal-overlay modal-overlay--top" v-show="m_confDelItem">
+    <div class="modal">
+      <p class="modal-title">Delete Item?</p>
+      <p class="modal-subtitle">{{ mc_confDelItemMsg }}</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="m_confDelItem = false">No, Keep It</button>
+        <button class="btn-danger" @click="confirmDeleteViewItem">Yes, Delete</button>
       </div>
     </div>
   </div>
@@ -590,6 +653,30 @@
       <div class="modal-actions">
         <button class="btn-cancel" @click="cancelZoneCreation">Cancel</button>
         <button class="btn-confirm" @click="confirmZone">Create Zone</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Reorder warehouses ══ -->
+  <div class="modal-overlay" v-show="m_reorderTabs">
+    <div class="modal">
+      <p class="modal-title">Reorder Warehouses</p>
+      <div class="reorder-list">
+        <div v-for="(wh, i) in reorderList" :key="wh.id"
+             class="reorder-item" :class="{ 'reorder-item--selected': i === reorderSelIdx }"
+             @click="reorderSelIdx = i">
+          {{ wh.name }}
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content:space-between">
+        <div style="display:flex;gap:6px">
+          <button class="btn-move" :disabled="reorderSelIdx <= 0" @click="reorderTabUp">&#x25B2; Up</button>
+          <button class="btn-move" :disabled="reorderSelIdx < 0 || reorderSelIdx >= reorderList.length - 1" @click="reorderTabDown">&#x25BC; Down</button>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-cancel" @click="m_reorderTabs = false">Cancel</button>
+          <button class="btn-confirm" @click="saveReorderTabs">Save</button>
+        </div>
       </div>
     </div>
   </div>
@@ -678,9 +765,11 @@
         <div v-for="item in mc_itemList" :key="item.id"
              class="item-row" :class="{ selected: mc_selItemIds.includes(item.id) }"
              @click="toggleItemSel(item.id, $event.ctrlKey || $event.metaKey)">
-          <span class="item-id-label">{{ item.itemId }}</span>
-          <span class="item-meta">{{ [item.type, item.category].filter(Boolean).join(' · ') }}</span>
-          <span v-if="item.notes" class="item-meta" style="font-style:italic">{{ item.notes }}</span>
+          <div class="item-row-main">
+            <span class="item-id-label">{{ item.itemId }}</span>
+            <span class="item-meta">{{ [item.type, item.category].filter(Boolean).join(' · ') }}</span>
+            <span v-if="item.notes" class="item-meta" style="font-style:italic">{{ item.notes }}</span>
+          </div>
         </div>
       </div>
       <div class="selected-count">{{ mc_selCount }} selected</div>
@@ -747,12 +836,37 @@
         <button class="action-btn add" @click="openAddZoneItem">
           <span class="action-icon">＋</span>Add Item
         </button>
+        <button class="action-btn bulk" @click="openZoneBulkAdd">
+          <span class="action-icon">⊞</span>Bulk Add
+        </button>
         <button class="action-btn rem" @click="openZoneItemList">
           <span class="action-icon">&#x2261;</span>Manage Items
         </button>
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" @click="closeAllModals">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Zone bulk add items ══ -->
+  <div class="modal-overlay" v-show="m_zoneBulkAdd">
+    <div class="modal">
+      <button class="modal-close" @click="closeAllModals" title="Close">&#x2715;</button>
+      <p class="modal-title">Bulk Add Items</p>
+      <p class="modal-subtitle">{{ mc_zoneActTitle }}</p>
+      <p style="font-size:11px;color:#64748b;margin:0 0 6px;">
+        One item per line: <code style="color:#94a3b8;">ID;Type;Category;Tags;URL;Notes</code>
+      </p>
+      <div class="form-field">
+        <textarea ref="zoneBulkAddInput" v-model="f_zoneBulkText" rows="8"
+                  placeholder="1234;electronics;accessories;fragile,hazmat;https://example.com;notes here&#10;4321;plumbing;fittings;;;another note"
+                  style="font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+      </div>
+      <p v-if="zoneBulkAddError" style="color:#ef4444;font-size:12px;white-space:pre-line;margin:4px 0 0;">{{ zoneBulkAddError }}</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="m_zoneBulkAdd = false; m_zoneAct = true">← Back</button>
+        <button class="btn-confirm" @click="confirmZoneBulkAdd">Add Items</button>
       </div>
     </div>
   </div>
@@ -768,9 +882,12 @@
         <div v-for="item in mc_zoneItemList" :key="item.id"
              class="item-row" :class="{ selected: mc_selZoneItemIds.includes(item.id) }"
              @click="toggleZoneItemSel(item.id, $event.ctrlKey || $event.metaKey)">
-          <span class="item-id-label">{{ item.itemId }}</span>
-          <span class="item-meta">{{ [item.type, item.category].filter(Boolean).join(' · ') }}</span>
-          <span v-if="item.notes" class="item-meta" style="font-style:italic">{{ item.notes }}</span>
+          <div class="item-row-main">
+            <span class="item-id-label">{{ item.itemId }}</span>
+            <span class="item-meta">{{ [item.type, item.category].filter(Boolean).join(' · ') }}</span>
+            <span v-if="item.notes" class="item-meta" style="font-style:italic">{{ item.notes }}</span>
+          </div>
+          <button class="btn-result-view" @click.stop="openItemDetailFromZone(item)">View</button>
         </div>
       </div>
       <div class="selected-count">{{ mc_zoneSelCount }} selected</div>
@@ -804,6 +921,13 @@
     </div>
   </div>
 
+  <!-- ── Relocate mode banner ── -->
+  <div class="relocate-banner" v-show="relocateMode">
+    <span class="relocate-banner-icon">&#x2921;</span>
+    <span class="relocate-banner-msg">Move mode — click a zone or pallet rack to set destination. Switch warehouse tabs freely.</span>
+    <button class="btn-relocate-cancel" @click="cancelRelocate">&#x2715; Cancel Move</button>
+  </div>
+
   <!-- ── Console log strip ── -->
   <div class="app-console" ref="consoleEl">
     <div v-for="(entry, i) in consoleLogs" :key="i" class="console-entry" :class="entry.type">
@@ -812,6 +936,27 @@
     </div>
     <div v-if="consoleLogs.length === 0" class="console-entry console-placeholder">
       Console ready.
+    </div>
+  </div>
+
+  <!-- ── Offline banner ── -->
+  <div class="offline-banner" v-show="isOffline">
+    <span class="offline-banner-dot"></span>
+    <span>No connection to server &mdash; attempting to reconnect&hellip;</span>
+  </div>
+
+  <!-- ── Offline warning modal ── -->
+  <div class="modal-overlay modal-overlay--top" v-show="m_offlineModal">
+    <div class="modal modal-warn">
+      <p class="modal-title">&#9888;&nbsp;Connection Lost</p>
+      <p class="modal-body">
+        The connection to the server has been lost for more than 15 seconds.<br>
+        Your changes may not be saved until the connection is restored.<br><br>
+        The app will resume automatically once the server is reachable again.
+      </p>
+      <div class="modal-actions" style="justify-content:center">
+        <button class="btn-confirm" @click="m_offlineModal = false">OK</button>
+      </div>
     </div>
   </div>
 

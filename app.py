@@ -125,6 +125,13 @@ def get_db():
     return conn
 
 
+def _bump_seq(conn: sqlite3.Connection) -> int:
+    """Increment the global change sequence and return the new value."""
+    conn.execute("UPDATE meta SET value = value + 1 WHERE key = 'change_seq'")
+    row = conn.execute("SELECT value FROM meta WHERE key = 'change_seq'").fetchone()
+    return int(row["value"]) if row else 0
+
+
 def init_db():
     try:
         conn = get_db()
@@ -134,6 +141,13 @@ def init_db():
                 data    TEXT    NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS meta (
+                key   TEXT PRIMARY KEY,
+                value INTEGER NOT NULL DEFAULT 0
+            );
+
+            INSERT OR IGNORE INTO meta (key, value) VALUES ('change_seq', 0);
 
             CREATE TABLE IF NOT EXISTS items (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -274,6 +288,14 @@ async def log_vue_error(body: VueErrorBody):
     return {"ok": True}
 
 
+# ── Health / connectivity ─────────────────────────────────────────────────────
+
+@app.get("/api/ping")
+async def ping():
+    """Lightweight connectivity probe — no auth required."""
+    return {"ok": True}
+
+
 # ── Auth API ─────────────────────────────────────────────────────────────────
 
 class LoginBody(BaseModel):
@@ -319,13 +341,25 @@ def me(user: dict = Depends(get_current_user)):
 @app.get("/api/layout")
 def get_layout(user: dict = Depends(get_current_user)):
     conn = get_db()
-    row = conn.execute("SELECT data FROM layout WHERE id = 1").fetchone()
+    row     = conn.execute("SELECT data FROM layout WHERE id = 1").fetchone()
+    seq_row = conn.execute("SELECT value FROM meta WHERE key = 'change_seq'").fetchone()
     conn.close()
+    seq = int(seq_row["value"]) if seq_row else 0
     if row:
         backend_log.info("Layout loaded by '%s'", user["username"])
-        return json.loads(row["data"])
+        data = json.loads(row["data"])
+        data["_seq"] = seq
+        return data
     backend_log.info("Layout requested by '%s' — no layout found, returning empty", user["username"])
-    return {"warehouses": [], "activeWarehouseIdx": 0}
+    return {"warehouses": [], "activeWarehouseIdx": 0, "_seq": seq}
+
+
+@app.get("/api/layout-version")
+def get_layout_version(user: dict = Depends(get_current_user)):
+    conn = get_db()
+    row = conn.execute("SELECT value FROM meta WHERE key = 'change_seq'").fetchone()
+    conn.close()
+    return {"seq": int(row["value"]) if row else 0}
 
 
 class LayoutBody(BaseModel):
@@ -352,11 +386,12 @@ def save_layout(body: LayoutBody, user: dict = Depends(require_admin)):
         """,
         (json.dumps(body.data), now),
     )
+    seq = _bump_seq(conn)
     conn.commit()
     conn.close()
     wh_count = len(body.data.get("warehouses", []))
     backend_log.info("Layout saved by '%s' (%d warehouse(s))", user["username"], wh_count)
-    return {"ok": True}
+    return {"ok": True, "seq": seq}
 
 
 # ── Items API ─────────────────────────────────────────────────────────────────
@@ -462,6 +497,9 @@ def search_items(
 
 @app.post("/api/items")
 def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
+    clean_id = body.item_id.lstrip('0').upper() or body.item_id.upper()
+    if len(clean_id) < 3:
+        raise HTTPException(status_code=422, detail="Item ID must be at least 3 characters.")
     added_at = body.added_at or datetime.now(timezone.utc).isoformat()
     conn = get_db()
     cur = conn.execute(
@@ -476,8 +514,8 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            body.item_id, body.item_type, body.category, body.notes,
-            body.url, body.tags, added_at,
+            clean_id, body.item_type.upper(), body.category.upper(), body.notes,
+            body.url, body.tags.upper(), added_at,
             body.location_type, body.warehouse_id, body.warehouse_name,
             body.pallet_rack_id, body.pallet_rack_label, body.pallet_rack_row,
             body.subsection_id, body.subsection_number, body.subsection_name,
@@ -485,6 +523,7 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
             body.zone_id, body.zone_label,
         ),
     )
+    seq = _bump_seq(conn)
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -492,7 +531,7 @@ def add_item(body: ItemBody, user: dict = Depends(get_current_user)):
         "Item added: id=%d item_id='%s' location=%s by '%s'",
         new_id, body.item_id, body.location_type, user["username"],
     )
-    return {"id": new_id}
+    return {"id": new_id, "seq": seq}
 
 
 class PalletRackRelabelBody(BaseModel):
@@ -507,13 +546,14 @@ def relabel_pallet_rack_items(pallet_rack_id: int, body: PalletRackRelabelBody, 
         "UPDATE items SET pallet_rack_label=?, pallet_rack_row=? WHERE pallet_rack_id=?",
         (body.pallet_rack_label, body.pallet_rack_row, pallet_rack_id),
     )
+    seq = _bump_seq(conn)
     conn.commit()
     conn.close()
     backend_log.info(
         "Pallet rack %d relabelled to '%s' (row '%s') by '%s'",
         pallet_rack_id, body.pallet_rack_label, body.pallet_rack_row, user["username"],
     )
-    return {"ok": True}
+    return {"ok": True, "seq": seq}
 
 
 class RenameWarehouseBody(BaseModel):
@@ -528,13 +568,14 @@ def rename_warehouse_items(body: RenameWarehouseBody, user: dict = Depends(get_c
         "UPDATE items SET warehouse_name = ? WHERE warehouse_name = ?",
         (body.new_name, body.old_name),
     )
+    seq = _bump_seq(conn)
     conn.commit()
     conn.close()
     backend_log.info(
         "Warehouse renamed '%s' → '%s' (%d item(s) updated) by '%s'",
         body.old_name, body.new_name, result.rowcount, user["username"],
     )
-    return {"ok": True}
+    return {"ok": True, "seq": seq}
 
 
 class MoveItemBody(BaseModel):
@@ -573,20 +614,41 @@ def move_item(item_db_id: int, body: MoveItemBody, user: dict = Depends(get_curr
             item_db_id,
         ),
     )
+    seq = _bump_seq(conn)
     conn.commit()
     conn.close()
     backend_log.info(
         "Item db_id=%d moved to %s '%s' by '%s'",
         item_db_id, body.location_type, body.warehouse_name, user["username"],
     )
-    return {"ok": True}
+    return {"ok": True, "seq": seq}
+
+
+@app.put("/api/items/{item_db_id}")
+def update_item(item_db_id: int, body: ItemBody, user: dict = Depends(get_current_user)):
+    clean_id = body.item_id.lstrip('0').upper() or body.item_id.upper()
+    if len(clean_id) < 3:
+        raise HTTPException(status_code=422, detail="Item ID must be at least 3 characters.")
+    conn = get_db()
+    conn.execute(
+        """UPDATE items SET
+            item_id=?, item_type=?, category=?, notes=?, url=?, tags=?
+           WHERE id=?""",
+        (clean_id, body.item_type.upper(), body.category.upper(), body.notes, body.url, body.tags.upper(), item_db_id),
+    )
+    seq = _bump_seq(conn)
+    conn.commit()
+    conn.close()
+    backend_log.info("Item db_id=%d updated by '%s'", item_db_id, user["username"])
+    return {"ok": True, "seq": seq}
 
 
 @app.delete("/api/items/{item_db_id}")
 def delete_item(item_db_id: int, user: dict = Depends(get_current_user)):
     conn = get_db()
     conn.execute("DELETE FROM items WHERE id = ?", (item_db_id,))
+    seq = _bump_seq(conn)
     conn.commit()
     conn.close()
     backend_log.info("Item db_id=%d deleted by '%s'", item_db_id, user["username"])
-    return {"ok": True}
+    return {"ok": True, "seq": seq}
